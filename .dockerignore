@@ -1,0 +1,11 @@
+target/
+.git
+.gitignore
+.idea
+*.iml
+.project
+.classpath
+.settings
+.mvn/wrapper/maven-wrapper.jar
+**/Thumbs.db
+**/.DS_Store
