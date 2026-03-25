@@ -42,11 +42,11 @@ public class LocationController {
 	private final CatchRepository catchRepo;
 
 	/**
-	 * Simple health check (unauthenticated).
+	 * Simple health check (unauthenticated). Available at {@code /heartbeat} and {@code /healthcheck}.
 	 *
 	 * @return plain-text greeting
 	 */
-	@GetMapping("/heartbeat")
+	@GetMapping({ "/heartbeat", "/healthcheck" })
 	public String root() {
 		return "Hello, this is a plain string!";
 	}

@@ -1,5 +1,6 @@
 package ca.consmatt.controllers;
 
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -80,7 +81,8 @@ public class AccountController {
 	 * Registers a new account (no authentication required).
 	 *
 	 * @param request username and plain password (validated)
-	 * @return 201 with {@link AccountResponse}, 409 if username exists, 400 on validation failure
+	 * @return 201 with {@link AccountResponse}, 409 if username exists (including DB constraint races),
+	 *         400 on validation failure
 	 */
 	@PostMapping({ "", "/" })
 	public ResponseEntity<?> createAccount(@Valid @RequestBody CreateAccountRequest request) {
@@ -88,8 +90,12 @@ public class AccountController {
 		if (accountRepository.existsByUsername(username)) {
 			return ResponseEntity.status(HttpStatus.CONFLICT).body("Username already taken");
 		}
-		Account saved = accountRepository
-				.save(new Account(null, username, passwordEncoder.encode(request.password())));
-		return ResponseEntity.status(HttpStatus.CREATED).body(new AccountResponse(saved.getId(), saved.getUsername()));
+		try {
+			Account saved = accountRepository
+					.save(new Account(null, username, passwordEncoder.encode(request.password())));
+			return ResponseEntity.status(HttpStatus.CREATED).body(new AccountResponse(saved.getId(), saved.getUsername()));
+		} catch (DataIntegrityViolationException e) {
+			return ResponseEntity.status(HttpStatus.CONFLICT).body("Username already taken");
+		}
 	}
 }

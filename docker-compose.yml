@@ -1,0 +1,50 @@
+# FishList API + MinIO for local image/upload testing.
+# Usage: docker compose up --build
+#   - API:            http://localhost:8080
+#   - MinIO S3 API:   http://localhost:9000
+#   - MinIO Console:  http://localhost:9001  (login minioadmin / minioadmin)
+
+services:
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio-data:/data
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        sleep 5
+        mc alias set local http://minio:9000 minioadmin minioadmin
+        mc mb local/fishlist --ignore-existing
+    restart: "no"
+
+  fishlist:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      MINIO_ENABLED: "true"
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: fishlist
+      # Browser-facing MinIO URL for presigned links (SDK uses internal minio:9000)
+      MINIO_PUBLIC_BASE_URL: http://localhost:9000
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+
+volumes:
+  minio-data:

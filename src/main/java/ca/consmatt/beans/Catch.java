@@ -50,6 +50,7 @@ public class Catch {
 	@Column(length = 500)
 	private String notes;
 
+	@Column(length = 2048)
 	private String imageUrl;
 
 	@Column(length = 1000)

@@ -1,5 +1,7 @@
 package ca.consmatt.bootstrap;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
@@ -25,6 +27,8 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class DummyDataBootstrap implements CommandLineRunner {
 
+	private static final Logger log = LoggerFactory.getLogger(DummyDataBootstrap.class);
+
 	private final AccountRepository accountRepository;
 	private final LocationRepository locationRepository;
 	private final FishRepository fishRepository;
@@ -42,6 +46,15 @@ public class DummyDataBootstrap implements CommandLineRunner {
 			return;
 		}
 
+		try {
+			loadDummyData();
+		} catch (RuntimeException e) {
+			log.error("Dummy data bootstrap failed", e);
+			throw e;
+		}
+	}
+
+	private void loadDummyData() {
 		String encoded = passwordEncoder.encode("password");
 
 		Account user = accountRepository.save(new Account(null, "user", encoded));
@@ -143,4 +156,5 @@ public class DummyDataBootstrap implements CommandLineRunner {
 				.notes("Jack pike, fun fight.")
 				.build());
 	}
+
 }

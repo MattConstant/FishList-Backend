@@ -2,6 +2,7 @@ package ca.consmatt.security;
 
 import java.util.List;
 
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -21,6 +22,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
  */
 @Configuration
 @EnableWebSecurity
+@EnableConfigurationProperties(CorsProperties.class)
 public class SecurityConfig {
 
 	/**
@@ -35,7 +37,7 @@ public class SecurityConfig {
 				.cors(Customizer.withDefaults())
 				.authorizeHttpRequests(auth -> auth
 						.requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
-						.requestMatchers("/api/locations/heartbeat").permitAll()
+						.requestMatchers("/api/locations/heartbeat", "/api/locations/healthcheck").permitAll()
 						.requestMatchers(HttpMethod.POST, "/api/accounts", "/api/accounts/").permitAll()
 						.requestMatchers("/h2-console/**").permitAll()
 						.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
@@ -48,16 +50,30 @@ public class SecurityConfig {
 	}
 
 	/**
-	 * Permissive CORS for browser clients during development.
+	 * CORS for cross-origin frontends. Spring Security picks up this {@link CorsConfigurationSource}
+	 * bean when {@code http.cors(...)} is enabled on the filter chain.
 	 *
+	 * @param corsProperties bound from {@code app.cors.*}
 	 * @return source registered for all paths
 	 */
 	@Bean
-	public CorsConfigurationSource corsConfigurationSource() {
+	public CorsConfigurationSource corsConfigurationSource(CorsProperties corsProperties) {
+		if (corsProperties.isAllowCredentials()) {
+			for (String pattern : corsProperties.getAllowedOriginPatterns()) {
+				if ("*".equals(pattern)) {
+					throw new IllegalStateException(
+							"app.cors.allow-credentials=true is incompatible with app.cors.allowed-origin-patterns=*; "
+									+ "list explicit origins (e.g. http://localhost:5173)");
+				}
+			}
+		}
 		CorsConfiguration config = new CorsConfiguration();
-		config.setAllowedOriginPatterns(List.of("*"));
-		config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
+		config.setAllowedOriginPatterns(corsProperties.getAllowedOriginPatterns());
+		config.setAllowedMethods(List.of("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
 		config.setAllowedHeaders(List.of("*"));
+		config.setExposedHeaders(List.of("Location", "Content-Disposition"));
+		config.setMaxAge(corsProperties.getMaxAgeSeconds());
+		config.setAllowCredentials(corsProperties.isAllowCredentials());
 		UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
 		source.registerCorsConfiguration("/**", config);
 		return source;
