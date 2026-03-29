@@ -1,7 +1,10 @@
 package ca.consmatt.controllers;
 
 import java.util.List;
+import java.time.Instant;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -13,16 +16,25 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 import ca.consmatt.beans.Account;
 import ca.consmatt.beans.Catch;
+import ca.consmatt.beans.CatchComment;
+import ca.consmatt.beans.CatchLike;
 import ca.consmatt.beans.Location;
 import ca.consmatt.dto.AddCatchRequest;
+import ca.consmatt.dto.CatchCommentResponse;
+import ca.consmatt.dto.CatchCommentsPageResponse;
+import ca.consmatt.dto.CatchLikeResponse;
+import ca.consmatt.dto.CreateCatchCommentRequest;
 import ca.consmatt.dto.LocationDetailResponse;
 import ca.consmatt.repositories.AccountRepository;
+import ca.consmatt.repositories.CatchCommentRepository;
 import ca.consmatt.repositories.CatchRepository;
+import ca.consmatt.repositories.CatchLikeRepository;
 import ca.consmatt.repositories.LocationRepository;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -40,6 +52,8 @@ public class LocationController {
 	private final LocationRepository locationRepo;
 	private final AccountRepository accountRepository;
 	private final CatchRepository catchRepo;
+	private final CatchLikeRepository catchLikeRepo;
+	private final CatchCommentRepository catchCommentRepo;
 
 	/**
 	 * Simple health check (unauthenticated). Available at {@code /heartbeat} and {@code /healthcheck}.
@@ -134,6 +148,125 @@ public class LocationController {
 	}
 
 	/**
+	 * Lists comments for one catch.
+	 */
+	@GetMapping("/{id}/catches/{catchId}/comments")
+	public CatchCommentsPageResponse getCatchComments(@PathVariable Long id, @PathVariable Long catchId,
+			@RequestParam(name = "offset", defaultValue = "0") int offset,
+			@RequestParam(name = "limit", defaultValue = "3") int limit,
+			Authentication authentication) {
+		Account account = requireAccount(authentication);
+		Catch catchEntity = requireCatchInLocation(id, catchId);
+		int normalizedOffset = Math.max(offset, 0);
+		int normalizedLimit = Math.min(Math.max(limit, 1), 20);
+		int requestWindow = normalizedOffset + normalizedLimit;
+
+		Page<CatchComment> pageResult = catchCommentRepo.findByCatchRecord_IdOrderByIdDesc(
+				catchEntity.getId(),
+				PageRequest.of(0, requestWindow));
+
+		List<CatchCommentResponse> comments = pageResult.getContent()
+				.stream()
+				.skip(normalizedOffset)
+				.limit(normalizedLimit)
+				.map(comment -> toCatchCommentResponse(comment, account))
+				.toList();
+
+		return new CatchCommentsPageResponse(
+				comments,
+				pageResult.getTotalElements(),
+				normalizedOffset,
+				normalizedLimit);
+	}
+
+	/**
+	 * Adds a comment on a catch.
+	 */
+	@PostMapping("/{id}/catches/{catchId}/comments")
+	public ResponseEntity<CatchCommentResponse> addCatchComment(@PathVariable Long id, @PathVariable Long catchId,
+			@Valid @RequestBody CreateCatchCommentRequest request, Authentication authentication) {
+		Account account = requireAccount(authentication);
+		Catch catchEntity = requireCatchInLocation(id, catchId);
+		CatchComment saved = catchCommentRepo.save(new CatchComment(
+				null,
+				catchEntity,
+				account,
+				request.message().trim(),
+				Instant.now().toString()));
+		return ResponseEntity.status(HttpStatus.CREATED).body(toCatchCommentResponse(saved, account));
+	}
+
+	/**
+	 * Deletes one comment. Allowed for the comment owner or location owner.
+	 */
+	@DeleteMapping("/{id}/catches/{catchId}/comments/{commentId}")
+	public ResponseEntity<Void> deleteCatchComment(@PathVariable Long id, @PathVariable Long catchId,
+			@PathVariable Long commentId, Authentication authentication) {
+		Account account = requireAccount(authentication);
+		Catch catchEntity = requireCatchInLocation(id, catchId);
+		CatchComment comment = catchCommentRepo.findByIdAndCatchRecord_Id(commentId, catchEntity.getId())
+				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Comment not found"));
+
+		boolean isCommentOwner = comment.getAccount() != null && account.getId().equals(comment.getAccount().getId());
+		boolean isLocationOwner = catchEntity.getLocation() != null
+				&& catchEntity.getLocation().getAccount() != null
+				&& account.getId().equals(catchEntity.getLocation().getAccount().getId());
+		if (!isCommentOwner && !isLocationOwner) {
+			throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not allowed to delete this comment");
+		}
+
+		catchCommentRepo.delete(comment);
+		return ResponseEntity.noContent().build();
+	}
+
+	/**
+	 * Returns likes count and whether the current user has liked this catch.
+	 */
+	@GetMapping("/{id}/catches/{catchId}/like")
+	public CatchLikeResponse getCatchLike(@PathVariable Long id, @PathVariable Long catchId,
+			Authentication authentication) {
+		Account account = requireAccount(authentication);
+		Catch catchEntity = requireCatchInLocation(id, catchId);
+		long likesCount = catchLikeRepo.countByCatchRecord_Id(catchEntity.getId());
+		boolean likedByMe = catchLikeRepo.existsByCatchRecord_IdAndAccount_Id(catchEntity.getId(), account.getId());
+		return new CatchLikeResponse(catchEntity.getId(), likesCount, likedByMe);
+	}
+
+	/**
+	 * Adds a like for the current user (idempotent).
+	 */
+	@PostMapping("/{id}/catches/{catchId}/like")
+	public CatchLikeResponse likeCatch(@PathVariable Long id, @PathVariable Long catchId,
+			Authentication authentication) {
+		Account account = requireAccount(authentication);
+		Catch catchEntity = requireCatchInLocation(id, catchId);
+
+		boolean alreadyLiked = catchLikeRepo.existsByCatchRecord_IdAndAccount_Id(catchEntity.getId(), account.getId());
+		if (!alreadyLiked) {
+			catchLikeRepo.save(new CatchLike(null, account, catchEntity));
+		}
+
+		long likesCount = catchLikeRepo.countByCatchRecord_Id(catchEntity.getId());
+		return new CatchLikeResponse(catchEntity.getId(), likesCount, true);
+	}
+
+	/**
+	 * Removes a like for the current user (idempotent).
+	 */
+	@DeleteMapping("/{id}/catches/{catchId}/like")
+	public CatchLikeResponse unlikeCatch(@PathVariable Long id, @PathVariable Long catchId,
+			Authentication authentication) {
+		Account account = requireAccount(authentication);
+		Catch catchEntity = requireCatchInLocation(id, catchId);
+
+		catchLikeRepo.findByCatchRecord_IdAndAccount_Id(catchEntity.getId(), account.getId())
+				.ifPresent(catchLikeRepo::delete);
+
+		long likesCount = catchLikeRepo.countByCatchRecord_Id(catchEntity.getId());
+		return new CatchLikeResponse(catchEntity.getId(), likesCount, false);
+	}
+
+	/**
 	 * Deletes one catch from a location (owner only).
 	 *
 	 * @param id location id
@@ -150,6 +283,8 @@ public class LocationController {
 		assertLocationOwner(location, account);
 		Catch catchEntity = catchRepo.findByIdAndLocation_Id(catchId, id)
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Catch not found"));
+		catchCommentRepo.deleteByCatchRecord_Id(catchEntity.getId());
+		catchLikeRepo.deleteByCatchRecord_Id(catchEntity.getId());
 		catchRepo.delete(catchEntity);
 		return ResponseEntity.noContent().build();
 	}
@@ -167,6 +302,8 @@ public class LocationController {
 		Location location = locationRepo.findById(id)
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Location not found"));
 		assertLocationOwner(location, account);
+		catchCommentRepo.deleteByCatchRecord_Location_Id(id);
+		catchLikeRepo.deleteByCatchRecord_Location_Id(id);
 		catchRepo.deleteByLocation_Id(id);
 		locationRepo.deleteById(id);
 		return ResponseEntity.ok("deleted");
@@ -204,6 +341,30 @@ public class LocationController {
 	private Account requireAccount(Authentication authentication) {
 		return accountRepository.findByUsername(authentication.getName())
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED));
+	}
+
+	private Catch requireCatchInLocation(Long locationId, Long catchId) {
+		if (!locationRepo.existsById(locationId)) {
+			throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Location not found");
+		}
+		return catchRepo.findByIdAndLocation_Id(catchId, locationId)
+				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Catch not found"));
+	}
+
+	private CatchCommentResponse toCatchCommentResponse(CatchComment comment, Account currentAccount) {
+		Long accountId = comment.getAccount() != null ? comment.getAccount().getId() : null;
+		String username = comment.getAccount() != null ? comment.getAccount().getUsername() : "unknown";
+		boolean ownedByMe = accountId != null
+				&& currentAccount != null
+				&& accountId.equals(currentAccount.getId());
+		return new CatchCommentResponse(
+				comment.getId(),
+				comment.getCatchRecord() != null ? comment.getCatchRecord().getId() : null,
+				accountId,
+				username,
+				comment.getMessage(),
+				comment.getCreatedAt(),
+				ownedByMe);
 	}
 
 	/**

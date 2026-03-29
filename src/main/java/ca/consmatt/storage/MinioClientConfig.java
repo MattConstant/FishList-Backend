@@ -33,6 +33,8 @@ public class MinioClientConfig {
 		}
 		return MinioClient.builder()
 				.endpoint(endpoint)
+				// Avoid runtime region lookup against host-mapped endpoints (e.g. localhost in Docker).
+				.region("us-east-1")
 				.credentials(properties.getAccessKey(), properties.getSecretKey())
 				.build();
 	}

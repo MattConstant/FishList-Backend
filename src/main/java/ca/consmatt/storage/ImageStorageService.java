@@ -55,7 +55,13 @@ public class ImageStorageService {
 					.contentType(contentType)
 					.build();
 			minioClient.putObject(put);
-			String getUrl = presignedGetUrl(objectKey);
+			String getUrl = "";
+			try {
+				getUrl = presignedGetUrl(objectKey);
+			} catch (Exception ignored) {
+				// Upload already succeeded. Some environments can write objects but fail presign URL generation.
+				// Return the object key so clients can request /download-url later.
+			}
 			return new ImageUploadResponse(properties.getBucket(), objectKey, contentType, size, getUrl);
 		} catch (Exception e) {
 			throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Object storage upload failed", e);
