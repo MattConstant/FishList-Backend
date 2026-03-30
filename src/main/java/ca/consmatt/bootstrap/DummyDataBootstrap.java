@@ -1,5 +1,7 @@
 package ca.consmatt.bootstrap;
 
+import java.util.UUID;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
@@ -21,7 +23,7 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * Seeds sample accounts, species, conditions, locations, and catches when the database has no
- * accounts (typically first H2 in-memory startup). All seeded accounts use password {@code password}.
+ * accounts (typically first H2 in-memory startup).
  */
 @Component
 @RequiredArgsConstructor
@@ -55,7 +57,14 @@ public class DummyDataBootstrap implements CommandLineRunner {
 	}
 
 	private void loadDummyData() {
-		String encoded = passwordEncoder.encode("password");
+		String plainPassword = System.getenv("FISHLIST_DUMMY_PASSWORD");
+		if (plainPassword == null || plainPassword.isBlank()) {
+			plainPassword = "DevOnly-" + UUID.randomUUID() + "-A1!";
+			log.warn(
+					"FISHLIST_DUMMY_PASSWORD not set. Generated one-time dummy password for seeded users: {}",
+					plainPassword);
+		}
+		String encoded = passwordEncoder.encode(plainPassword);
 
 		Account user = accountRepository.save(new Account(null, "user", encoded));
 		Account alice = accountRepository.save(new Account(null, "alice", encoded));
