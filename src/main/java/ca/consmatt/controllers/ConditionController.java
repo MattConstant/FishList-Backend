@@ -17,6 +17,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import ca.consmatt.beans.Condition;
 import ca.consmatt.repositories.ConditionRepository;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 /**
@@ -50,7 +51,7 @@ public class ConditionController {
 	 * @return confirmation with new id
 	 */
 	@PostMapping({ "", "/" })
-	public String createCondition(@RequestBody Condition condition) {
+	public String createCondition(@Valid @RequestBody Condition condition) {
 		Condition saved = conditionRepo.save(condition);
 		return "Record added at index " + saved.getId();
 	}
@@ -68,7 +69,7 @@ public class ConditionController {
 	 * @return updated entity
 	 */
 	@PutMapping("/{id}")
-	public Condition updateCondition(@PathVariable Long id, @RequestBody Condition updated) {
+	public Condition updateCondition(@PathVariable Long id, @Valid @RequestBody Condition updated) {
 		return conditionRepo.findById(id).map(condition -> {
 			condition.setWeather(updated.getWeather());
 			condition.setTemperature(updated.getTemperature());

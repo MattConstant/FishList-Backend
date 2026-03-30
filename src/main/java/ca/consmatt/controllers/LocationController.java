@@ -8,6 +8,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,6 +31,7 @@ import ca.consmatt.dto.CatchCommentResponse;
 import ca.consmatt.dto.CatchCommentsPageResponse;
 import ca.consmatt.dto.CatchLikeResponse;
 import ca.consmatt.dto.CreateCatchCommentRequest;
+import ca.consmatt.dto.FeedPostResponse;
 import ca.consmatt.dto.LocationDetailResponse;
 import ca.consmatt.repositories.AccountRepository;
 import ca.consmatt.repositories.CatchCommentRepository;
@@ -37,6 +39,8 @@ import ca.consmatt.repositories.CatchRepository;
 import ca.consmatt.repositories.CatchLikeRepository;
 import ca.consmatt.repositories.LocationRepository;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 
 /**
@@ -47,6 +51,7 @@ import lombok.RequiredArgsConstructor;
 @RequestMapping("/api/locations")
 @CrossOrigin
 @RequiredArgsConstructor
+@Validated
 public class LocationController {
 
 	private final LocationRepository locationRepo;
@@ -73,6 +78,30 @@ public class LocationController {
 	@GetMapping({ "", "/" })
 	public List<Location> getLocationCollection() {
 		return locationRepo.findAll();
+	}
+
+	/**
+	 * Paginated latest feed rows (flattened catches + location + owner), newest first.
+	 */
+	@GetMapping("/feed")
+	public List<FeedPostResponse> getFeedPosts(
+			@RequestParam(name = "offset", defaultValue = "0") @Min(value = 0, message = "offset must be >= 0") int offset,
+			@RequestParam(name = "limit", defaultValue = "24") @Min(value = 1, message = "limit must be >= 1") @Max(value = 100, message = "limit must be <= 100") int limit) {
+		int normalizedOffset = Math.max(offset, 0);
+		int normalizedLimit = Math.min(Math.max(limit, 1), 100);
+		int page = normalizedOffset / normalizedLimit;
+		int pageOffset = page * normalizedLimit;
+
+		// Query one page and trim in-memory if offset isn't page-aligned.
+		List<FeedPostResponse> batch = catchRepo.findFeedPosts(PageRequest.of(page, normalizedLimit));
+		if (normalizedOffset == pageOffset) {
+			return batch;
+		}
+		int skip = normalizedOffset - pageOffset;
+		if (skip >= batch.size()) {
+			return List.of();
+		}
+		return batch.subList(skip, batch.size());
 	}
 
 	/**
@@ -111,7 +140,7 @@ public class LocationController {
 	 * @return 201 with message containing new id
 	 */
 	@PostMapping({ "", "/" })
-	public ResponseEntity<String> createLocation(@RequestBody Location location, Authentication authentication) {
+	public ResponseEntity<String> createLocation(@Valid @RequestBody Location location, Authentication authentication) {
 		Account account = requireAccount(authentication);
 		location.setAccount(account);
 		Location saved = locationRepo.save(location);
@@ -134,6 +163,7 @@ public class LocationController {
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Location not found"));
 		assertLocationOwner(location, account);
 		int quantity = request.quantity() != null ? request.quantity() : 1;
+		List<String> imageUrls = normalizeImageUrls(request.imageUrls(), request.imageUrl());
 		Catch catchEntity = Catch.builder()
 				.location(location)
 				.species(request.species().trim())
@@ -141,7 +171,8 @@ public class LocationController {
 				.lengthCm(request.lengthCm())
 				.weightKg(request.weightKg())
 				.notes(request.notes())
-				.imageUrl(request.imageUrl())
+				.imageUrl(imageUrls.isEmpty() ? null : imageUrls.get(0))
+				.imageUrlsRaw(String.join("\n", imageUrls))
 				.description(request.description())
 				.build();
 		return ResponseEntity.status(HttpStatus.CREATED).body(catchRepo.save(catchEntity));
@@ -152,8 +183,8 @@ public class LocationController {
 	 */
 	@GetMapping("/{id}/catches/{catchId}/comments")
 	public CatchCommentsPageResponse getCatchComments(@PathVariable Long id, @PathVariable Long catchId,
-			@RequestParam(name = "offset", defaultValue = "0") int offset,
-			@RequestParam(name = "limit", defaultValue = "3") int limit,
+			@RequestParam(name = "offset", defaultValue = "0") @Min(value = 0, message = "offset must be >= 0") int offset,
+			@RequestParam(name = "limit", defaultValue = "3") @Min(value = 1, message = "limit must be >= 1") @Max(value = 20, message = "limit must be <= 20") int limit,
 			Authentication authentication) {
 		Account account = requireAccount(authentication);
 		Catch catchEntity = requireCatchInLocation(id, catchId);
@@ -318,7 +349,7 @@ public class LocationController {
 	 * @return updated entity
 	 */
 	@PutMapping("/{id}")
-	public Location updateLocation(@PathVariable Long id, @RequestBody Location updatedLocation,
+	public Location updateLocation(@PathVariable Long id, @Valid @RequestBody Location updatedLocation,
 			Authentication authentication) {
 		Account account = requireAccount(authentication);
 		return locationRepo.findById(id).map(location -> {
@@ -377,5 +408,19 @@ public class LocationController {
 		if (location.getAccount() == null || !location.getAccount().getId().equals(account.getId())) {
 			throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not the owner of this location");
 		}
+	}
+
+	private List<String> normalizeImageUrls(List<String> imageUrls, String imageUrl) {
+		if (imageUrls != null && !imageUrls.isEmpty()) {
+			return imageUrls.stream()
+					.map(String::trim)
+					.filter(s -> !s.isEmpty())
+					.limit(4)
+					.toList();
+		}
+		if (imageUrl != null && !imageUrl.isBlank()) {
+			return List.of(imageUrl.trim());
+		}
+		return List.of();
 	}
 }

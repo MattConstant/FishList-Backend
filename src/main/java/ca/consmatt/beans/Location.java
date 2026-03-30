@@ -9,6 +9,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -30,17 +32,26 @@ public class Location {
 	private Long id;
 	
 	@NonNull
+	@NotBlank(message = "locationName is required")
+	@Size(max = 120, message = "locationName must be at most 120 characters")
 	private String locationName;
 	
 	@NonNull
+	@NotBlank(message = "latitude is required")
+	@Size(max = 40, message = "latitude must be at most 40 characters")
 	private String latitude;
 	
 	@NonNull
+	@NotBlank(message = "longitude is required")
+	@Size(max = 40, message = "longitude must be at most 40 characters")
 	private String longitude;
 	
 	@NonNull
+	@NotBlank(message = "timeStamp is required")
+	@Size(max = 80, message = "timeStamp must be at most 80 characters")
 	private String timeStamp;
 	
+	@Size(max = 1000, message = "details must be at most 1000 characters")
 	private String Details;
 
 	@ManyToOne(optional = false, fetch = FetchType.LAZY)

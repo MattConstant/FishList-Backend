@@ -3,6 +3,9 @@ package ca.consmatt.beans;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.util.Arrays;
+import java.util.List;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -53,6 +56,9 @@ public class Catch {
 	@Column(length = 2048)
 	private String imageUrl;
 
+	@Column(name = "image_urls", length = 8192)
+	private String imageUrlsRaw;
+
 	@Column(length = 1000)
 	private String description;
 
@@ -62,5 +68,36 @@ public class Catch {
 	@JsonProperty("locationId")
 	public Long getLocationId() {
 		return location != null ? location.getId() : null;
+	}
+
+	/**
+	 * Multi-image API view; persisted as newline-delimited keys/URLs.
+	 */
+	@JsonProperty("imageUrls")
+	public List<String> getImageUrlsList() {
+		if (imageUrlsRaw != null && !imageUrlsRaw.isBlank()) {
+			return Arrays.stream(imageUrlsRaw.split("\\R"))
+					.map(String::trim)
+					.filter(s -> !s.isEmpty())
+					.limit(4)
+					.toList();
+		}
+		if (imageUrl != null && !imageUrl.isBlank()) {
+			return List.of(imageUrl);
+		}
+		return List.of();
+	}
+
+	@JsonProperty("imageUrls")
+	public void setImageUrlsList(List<String> imageUrlsList) {
+		if (imageUrlsList == null || imageUrlsList.isEmpty()) {
+			this.imageUrlsRaw = null;
+			return;
+		}
+		this.imageUrlsRaw = imageUrlsList.stream()
+				.map(String::trim)
+				.filter(s -> !s.isEmpty())
+				.limit(4)
+				.collect(java.util.stream.Collectors.joining("\n"));
 	}
 }

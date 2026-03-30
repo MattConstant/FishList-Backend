@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.validation.annotation.Validated;
 
 import ca.consmatt.dto.ImageUploadResponse;
 import ca.consmatt.dto.PresignGetResponse;
@@ -18,6 +19,7 @@ import ca.consmatt.dto.PresignPutRequest;
 import ca.consmatt.dto.PresignPutResponse;
 import ca.consmatt.storage.ImageStorageService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
 
 /**
@@ -29,6 +31,7 @@ import lombok.RequiredArgsConstructor;
 @CrossOrigin
 @RequiredArgsConstructor
 @ConditionalOnProperty(name = "minio.enabled", havingValue = "true")
+@Validated
 public class ImageStorageController {
 
 	private final ImageStorageService imageStorageService;
@@ -56,12 +59,12 @@ public class ImageStorageController {
 	}
 
 	/**
-	 * Presigned GET for an object key you own (same prefix as uploads).
+	 * Presigned GET for a catch image object key in the uploads namespace.
 	 *
 	 * @param key full object key returned from upload or presign
 	 */
 	@GetMapping("/download-url")
-	public PresignGetResponse presignGet(@RequestParam("key") String key, Authentication authentication) {
-		return imageStorageService.presignGet(key, authentication.getName());
+	public PresignGetResponse presignGet(@RequestParam("key") @NotBlank(message = "key is required") String key) {
+		return imageStorageService.presignGet(key);
 	}
 }

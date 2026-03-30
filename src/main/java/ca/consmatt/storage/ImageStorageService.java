@@ -1,7 +1,10 @@
 package ca.consmatt.storage;
 
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
@@ -26,6 +29,20 @@ import io.minio.http.Method;
 public class ImageStorageService {
 
 	private static final Set<String> ALLOWED_EXTENSIONS = Set.of(".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic");
+	private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
+			"image/jpeg",
+			"image/png",
+			"image/gif",
+			"image/webp",
+			"image/heic",
+			"image/heif");
+	private static final Map<String, Set<String>> EXTENSION_TO_CONTENT_TYPES = Map.of(
+			".jpg", Set.of("image/jpeg"),
+			".jpeg", Set.of("image/jpeg"),
+			".png", Set.of("image/png"),
+			".gif", Set.of("image/gif"),
+			".webp", Set.of("image/webp"),
+			".heic", Set.of("image/heic", "image/heif"));
 	private static final int PRESIGN_PUT_MINUTES = 10;
 	private static final int PRESIGN_GET_HOURS = 1;
 
@@ -69,11 +86,13 @@ public class ImageStorageService {
 	}
 
 	public PresignPutResponse presignPut(PresignPutRequest request, String username) {
-		validateImageContentType(request.contentType());
+		String normalizedContentType = normalizeContentType(request.contentType());
+		validateImageContentType(normalizedContentType);
 		String ext = extension(request.filename());
 		if (ext.isEmpty() || !ALLOWED_EXTENSIONS.contains(ext)) {
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Allowed extensions: " + ALLOWED_EXTENSIONS);
 		}
+		validateExtensionMatchesContentType(ext, normalizedContentType);
 		String objectKey = buildObjectKey(username, request.filename());
 		try {
 			String url = presignClient.getPresignedObjectUrl(
@@ -82,7 +101,7 @@ public class ImageStorageService {
 							.bucket(properties.getBucket())
 							.object(objectKey)
 							.expiry(PRESIGN_PUT_MINUTES, TimeUnit.MINUTES)
-							.extraHeaders(java.util.Map.of("Content-Type", request.contentType()))
+							.extraHeaders(java.util.Map.of("Content-Type", normalizedContentType))
 							.build());
 			return new PresignPutResponse(
 					url,
@@ -94,10 +113,10 @@ public class ImageStorageService {
 		}
 	}
 
-	public PresignGetResponse presignGet(String objectKey, String username) {
-		assertOwnsKey(objectKey, username);
+	public PresignGetResponse presignGet(String objectKey) {
+		String normalizedKey = normalizeReadableKey(objectKey);
 		try {
-			String url = presignedGetUrl(objectKey);
+			String url = presignedGetUrl(normalizedKey);
 			return new PresignGetResponse(url, (int) TimeUnit.HOURS.toSeconds(PRESIGN_GET_HOURS));
 		} catch (Exception e) {
 			throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Could not create presigned GET URL", e);
@@ -114,28 +133,110 @@ public class ImageStorageService {
 						.build());
 	}
 
-	private void assertOwnsKey(String objectKey, String username) {
-		String prefix = "uploads/" + username + "/";
-		if (objectKey == null || !objectKey.startsWith(prefix)) {
-			throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not allowed to access this object key");
+	private String normalizeReadableKey(String objectKey) {
+		if (objectKey == null) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "object key is required");
 		}
+		String normalized = objectKey.trim();
+		if (normalized.isEmpty()) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "object key is required");
+		}
+		while (normalized.startsWith("/")) {
+			normalized = normalized.substring(1);
+		}
+		// Keep reads inside the uploads namespace and block traversal patterns.
+		if (!normalized.startsWith("uploads/") || normalized.contains("..")) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid object key");
+		}
+		return normalized;
 	}
 
 	private void validateImageMultipart(MultipartFile file) {
 		if (file == null || file.isEmpty()) {
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "file is required");
 		}
-		validateImageContentType(file.getContentType());
+		String normalizedContentType = normalizeContentType(file.getContentType());
+		validateImageContentType(normalizedContentType);
 		String ext = extension(file.getOriginalFilename());
 		if (ext.isEmpty() || !ALLOWED_EXTENSIONS.contains(ext)) {
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Allowed extensions: " + ALLOWED_EXTENSIONS);
 		}
+		validateExtensionMatchesContentType(ext, normalizedContentType);
+		validateFileSignature(file, ext);
+	}
+
+	private static String normalizeContentType(String contentType) {
+		if (contentType == null) {
+			return "";
+		}
+		String normalized = contentType.trim().toLowerCase(Locale.ROOT);
+		int semicolon = normalized.indexOf(';');
+		return semicolon >= 0 ? normalized.substring(0, semicolon).trim() : normalized;
 	}
 
 	private static void validateImageContentType(String contentType) {
-		if (contentType == null || !contentType.toLowerCase(Locale.ROOT).startsWith("image/")) {
-			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Content-Type must be an image/* type");
+		if (!ALLOWED_CONTENT_TYPES.contains(contentType)) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+					"Allowed content types: " + ALLOWED_CONTENT_TYPES);
 		}
+	}
+
+	private static void validateExtensionMatchesContentType(String ext, String contentType) {
+		Set<String> allowedTypesForExtension = EXTENSION_TO_CONTENT_TYPES.getOrDefault(ext, Set.of());
+		if (!allowedTypesForExtension.contains(contentType)) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+					"File extension does not match Content-Type");
+		}
+	}
+
+	private static void validateFileSignature(MultipartFile file, String ext) {
+		try (InputStream in = file.getInputStream()) {
+			byte[] header = in.readNBytes(32);
+			String detectedType = detectFileTypeFromHeader(header);
+			Set<String> allowedTypes = EXTENSION_TO_CONTENT_TYPES.getOrDefault(ext, Set.of());
+			if (detectedType == null || !allowedTypes.contains(detectedType)) {
+				throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "File contents are not a valid " + ext + " image");
+			}
+		} catch (ResponseStatusException e) {
+			throw e;
+		} catch (Exception e) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Could not validate uploaded file type", e);
+		}
+	}
+
+	private static String detectFileTypeFromHeader(byte[] header) {
+		if (header == null || header.length < 12) {
+			return null;
+		}
+		// JPEG
+		if ((header[0] & 0xFF) == 0xFF && (header[1] & 0xFF) == 0xD8 && (header[2] & 0xFF) == 0xFF) {
+			return "image/jpeg";
+		}
+		// PNG
+		byte[] pngSig = new byte[] { (byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
+		if (header.length >= 8 && Arrays.equals(Arrays.copyOfRange(header, 0, 8), pngSig)) {
+			return "image/png";
+		}
+		// GIF
+		String gifMagic = new String(header, 0, 6, StandardCharsets.US_ASCII);
+		if ("GIF87a".equals(gifMagic) || "GIF89a".equals(gifMagic)) {
+			return "image/gif";
+		}
+		// WEBP (RIFF....WEBP)
+		String riff = new String(header, 0, 4, StandardCharsets.US_ASCII);
+		String webp = new String(header, 8, 4, StandardCharsets.US_ASCII);
+		if ("RIFF".equals(riff) && "WEBP".equals(webp)) {
+			return "image/webp";
+		}
+		// HEIC/HEIF (ISO BMFF: ????ftyp....)
+		String ftyp = new String(header, 4, 4, StandardCharsets.US_ASCII);
+		if ("ftyp".equals(ftyp)) {
+			String brand = new String(header, 8, 4, StandardCharsets.US_ASCII).toLowerCase(Locale.ROOT);
+			if (Set.of("heic", "heix", "hevc", "hevx", "heif", "mif1", "msf1").contains(brand)) {
+				return "image/heic";
+			}
+		}
+		return null;
 	}
 
 	private String buildObjectKey(String username, String originalFilename) {

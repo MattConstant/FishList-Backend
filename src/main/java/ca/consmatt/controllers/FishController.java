@@ -17,6 +17,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import ca.consmatt.beans.Fish;
 import ca.consmatt.repositories.FishRepository;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 /**
@@ -50,7 +51,7 @@ public class FishController {
 	 * @return confirmation message with new id
 	 */
 	@PostMapping({ "", "/" })
-	public String createFish(@RequestBody Fish fish) {
+	public String createFish(@Valid @RequestBody Fish fish) {
 		Fish saved = fishRepo.save(fish);
 		return "Record added at index " + saved.getId();
 	}
@@ -68,7 +69,7 @@ public class FishController {
 	 * @return updated entity
 	 */
 	@PutMapping("/{id}")
-	public Fish updateFish(@PathVariable Long id, @RequestBody Fish updated) {
+	public Fish updateFish(@PathVariable Long id, @Valid @RequestBody Fish updated) {
 		return fishRepo.findById(id).map(fish -> {
 			fish.setSpecies(updated.getSpecies());
 			fish.setAverageWeight(updated.getAverageWeight());
