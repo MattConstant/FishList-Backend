@@ -128,6 +128,7 @@ public class GlobalExceptionHandler {
 		case FORBIDDEN -> "FORBIDDEN";
 		case NOT_FOUND -> "NOT_FOUND";
 		case CONFLICT -> "RESOURCE_CONFLICT";
+		case TOO_MANY_REQUESTS -> "RATE_LIMITED";
 		default -> status.name();
 		};
 	}

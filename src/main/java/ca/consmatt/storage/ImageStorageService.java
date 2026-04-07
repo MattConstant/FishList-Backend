@@ -2,13 +2,13 @@ package ca.consmatt.storage;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -19,10 +19,13 @@ import ca.consmatt.dto.ImageUploadResponse;
 import ca.consmatt.dto.PresignGetResponse;
 import ca.consmatt.dto.PresignPutRequest;
 import ca.consmatt.dto.PresignPutResponse;
-import io.minio.GetPresignedObjectUrlArgs;
-import io.minio.MinioClient;
-import io.minio.PutObjectArgs;
-import io.minio.http.Method;
+import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
 @Service
 @ConditionalOnProperty(name = "minio.enabled", havingValue = "true")
@@ -46,16 +49,13 @@ public class ImageStorageService {
 	private static final int PRESIGN_PUT_MINUTES = 10;
 	private static final int PRESIGN_GET_HOURS = 1;
 
-	private final MinioClient minioClient;
-	private final MinioClient presignClient;
+	private final S3Client s3Client;
+	private final S3Presigner s3Presigner;
 	private final MinioProperties properties;
 
-	public ImageStorageService(
-			MinioClient minioClient,
-			@Qualifier("presignClient") MinioClient presignClient,
-			MinioProperties properties) {
-		this.minioClient = minioClient;
-		this.presignClient = presignClient;
+	public ImageStorageService(S3Client s3Client, S3Presigner s3Presigner, MinioProperties properties) {
+		this.s3Client = s3Client;
+		this.s3Presigner = s3Presigner;
 		this.properties = properties;
 	}
 
@@ -65,19 +65,17 @@ public class ImageStorageService {
 		String contentType = file.getContentType();
 		try (InputStream in = file.getInputStream()) {
 			long size = file.getSize();
-			var put = PutObjectArgs.builder()
+			PutObjectRequest put = PutObjectRequest.builder()
 					.bucket(properties.getBucket())
-					.object(objectKey)
-					.stream(in, size, -1)
+					.key(objectKey)
 					.contentType(contentType)
 					.build();
-			minioClient.putObject(put);
+			s3Client.putObject(put, RequestBody.fromInputStream(in, size));
 			String getUrl = "";
 			try {
 				getUrl = presignedGetUrl(objectKey);
 			} catch (Exception ignored) {
 				// Upload already succeeded. Some environments can write objects but fail presign URL generation.
-				// Return the object key so clients can request /download-url later.
 			}
 			return new ImageUploadResponse(properties.getBucket(), objectKey, contentType, size, getUrl);
 		} catch (Exception e) {
@@ -95,14 +93,16 @@ public class ImageStorageService {
 		validateExtensionMatchesContentType(ext, normalizedContentType);
 		String objectKey = buildObjectKey(username, request.filename());
 		try {
-			String url = presignClient.getPresignedObjectUrl(
-					GetPresignedObjectUrlArgs.builder()
-							.method(Method.PUT)
-							.bucket(properties.getBucket())
-							.object(objectKey)
-							.expiry(PRESIGN_PUT_MINUTES, TimeUnit.MINUTES)
-							.extraHeaders(java.util.Map.of("Content-Type", normalizedContentType))
-							.build());
+			PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+					.bucket(properties.getBucket())
+					.key(objectKey)
+					.contentType(normalizedContentType)
+					.build();
+			PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
+					.signatureDuration(Duration.ofMinutes(PRESIGN_PUT_MINUTES))
+					.putObjectRequest(putObjectRequest)
+					.build();
+			String url = s3Presigner.presignPutObject(presignRequest).url().toExternalForm();
 			return new PresignPutResponse(
 					url,
 					properties.getBucket(),
@@ -123,14 +123,16 @@ public class ImageStorageService {
 		}
 	}
 
-	private String presignedGetUrl(String objectKey) throws Exception {
-		return presignClient.getPresignedObjectUrl(
-				GetPresignedObjectUrlArgs.builder()
-						.method(Method.GET)
-						.bucket(properties.getBucket())
-						.object(objectKey)
-						.expiry(PRESIGN_GET_HOURS, TimeUnit.HOURS)
-						.build());
+	private String presignedGetUrl(String objectKey) {
+		GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+				.bucket(properties.getBucket())
+				.key(objectKey)
+				.build();
+		GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
+				.signatureDuration(Duration.ofHours(PRESIGN_GET_HOURS))
+				.getObjectRequest(getObjectRequest)
+				.build();
+		return s3Presigner.presignGetObject(presignRequest).url().toExternalForm();
 	}
 
 	private String normalizeReadableKey(String objectKey) {
@@ -144,7 +146,6 @@ public class ImageStorageService {
 		while (normalized.startsWith("/")) {
 			normalized = normalized.substring(1);
 		}
-		// Keep reads inside the uploads namespace and block traversal patterns.
 		if (!normalized.startsWith("uploads/") || normalized.contains("..")) {
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid object key");
 		}
@@ -208,27 +209,22 @@ public class ImageStorageService {
 		if (header == null || header.length < 12) {
 			return null;
 		}
-		// JPEG
 		if ((header[0] & 0xFF) == 0xFF && (header[1] & 0xFF) == 0xD8 && (header[2] & 0xFF) == 0xFF) {
 			return "image/jpeg";
 		}
-		// PNG
 		byte[] pngSig = new byte[] { (byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
 		if (header.length >= 8 && Arrays.equals(Arrays.copyOfRange(header, 0, 8), pngSig)) {
 			return "image/png";
 		}
-		// GIF
 		String gifMagic = new String(header, 0, 6, StandardCharsets.US_ASCII);
 		if ("GIF87a".equals(gifMagic) || "GIF89a".equals(gifMagic)) {
 			return "image/gif";
 		}
-		// WEBP (RIFF....WEBP)
 		String riff = new String(header, 0, 4, StandardCharsets.US_ASCII);
 		String webp = new String(header, 8, 4, StandardCharsets.US_ASCII);
 		if ("RIFF".equals(riff) && "WEBP".equals(webp)) {
 			return "image/webp";
 		}
-		// HEIC/HEIF (ISO BMFF: ????ftyp....)
 		String ftyp = new String(header, 4, 4, StandardCharsets.US_ASCII);
 		if ("ftyp".equals(ftyp)) {
 			String brand = new String(header, 8, 4, StandardCharsets.US_ASCII).toLowerCase(Locale.ROOT);

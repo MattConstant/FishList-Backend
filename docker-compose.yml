@@ -3,6 +3,13 @@
 #   - API:            http://localhost:8080
 #   - MinIO S3 API:   http://localhost:9000
 #   - MinIO Console:  http://localhost:9001  (login minioadmin / minioadmin)
+#
+# Optional Supabase Postgres: set in .env (see .env.example):
+#   SPRING_PROFILES_ACTIVE=docker,supabase
+#   SPRING_DATASOURCE_URL, SPRING_DATASOURCE_USERNAME, SPRING_DATASOURCE_PASSWORD
+#
+# Optional Supabase Storage (S3): in .env set MINIO_ENDPOINT, keys, MINIO_PATH_STYLE=true, MINIO_REGION
+# (see .env.example). Create the bucket in the Supabase dashboard; endpoint must include /storage/v1/s3.
 
 services:
   minio:
@@ -34,14 +41,29 @@ services:
     ports:
       - "8080:8080"
     environment:
-      SPRING_PROFILES_ACTIVE: docker
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-docker}
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-}
       MINIO_ENABLED: "true"
-      MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
-      MINIO_BUCKET: fishlist
-      # Browser-facing MinIO URL for presigned links (SDK uses internal minio:9000)
-      MINIO_PUBLIC_BASE_URL: http://localhost:9000
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-fishlist}
+      MINIO_PUBLIC_BASE_URL: ${MINIO_PUBLIC_BASE_URL:-http://localhost:9000}
+      MINIO_REGION: ${MINIO_REGION:-us-east-1}
+      MINIO_PATH_STYLE: ${MINIO_PATH_STYLE:-false}
+      OPENAI_ENABLED: ${OPENAI_ENABLED:-false}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-}
+      OPENAI_IDENTIFY_DAILY_LIMIT: ${OPENAI_IDENTIFY_DAILY_LIMIT:-2}
+      IMAGE_UPLOAD_DAILY_LIMIT: ${IMAGE_UPLOAD_DAILY_LIMIT:-15}
+      RATE_LIMIT_FEED_PER_MINUTE: ${RATE_LIMIT_FEED_PER_MINUTE:-60}
+      RATE_LIMIT_SEARCH_PER_MINUTE: ${RATE_LIMIT_SEARCH_PER_MINUTE:-40}
+      RATE_LIMIT_STORAGE_DOWNLOAD_URL_PER_MINUTE: ${RATE_LIMIT_STORAGE_DOWNLOAD_URL_PER_MINUTE:-60}
+      RATE_LIMIT_LOCATION_WRITES_PER_MINUTE: ${RATE_LIMIT_LOCATION_WRITES_PER_MINUTE:-45}
+      RATE_LIMIT_INTERACTIONS_PER_MINUTE: ${RATE_LIMIT_INTERACTIONS_PER_MINUTE:-120}
     depends_on:
       minio-init:
         condition: service_completed_successfully

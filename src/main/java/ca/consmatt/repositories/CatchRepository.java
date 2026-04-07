@@ -47,4 +47,6 @@ public interface CatchRepository extends JpaRepository<Catch, Long> {
 
 	/** Removes all catches for the given location (used before deleting the location). */
 	void deleteByLocation_Id(Long locationId);
+
+	long countByLocation_Account_Id(Long accountId);
 }

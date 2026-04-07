@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import ca.consmatt.beans.Account;
+import ca.consmatt.beans.AccountRole;
 import ca.consmatt.beans.Catch;
 import ca.consmatt.beans.Condition;
 import ca.consmatt.beans.Fish;
@@ -66,9 +67,9 @@ public class DummyDataBootstrap implements CommandLineRunner {
 		}
 		String encoded = passwordEncoder.encode(plainPassword);
 
-		Account user = accountRepository.save(new Account(null, "user", encoded));
-		Account alice = accountRepository.save(new Account(null, "alice", encoded));
-		Account bob = accountRepository.save(new Account(null, "bob", encoded));
+		Account user = accountRepository.save(new Account(null, "user", encoded, AccountRole.USER));
+		Account alice = accountRepository.save(new Account(null, "alice", encoded, AccountRole.USER));
+		Account bob = accountRepository.save(new Account(null, "bob", encoded, AccountRole.USER));
 
 		fishRepository.save(Fish.builder()
 				.species("Brook trout")

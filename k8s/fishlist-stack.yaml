@@ -1,0 +1,205 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fishlist
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: fishlist-openai
+  namespace: fishlist
+type: Opaque
+stringData:
+  # Replace with your real key, then re-apply:
+  # kubectl apply -f FishList/k8s/fishlist-stack.yaml
+  OPENAI_API_KEY: "replace-with-real-openai-key"
+---
+# Replace placeholders with your Supabase Postgres JDBC URL and credentials before
+# applying, or create the fishlist-db secret out-of-band and remove this block.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: fishlist-db
+  namespace: fishlist
+type: Opaque
+stringData:
+  # Use Shared pooler host from Supabase Connect (copy exactly; may be aws-0- or aws-1-).
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://aws-1-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require"
+  SPRING_DATASOURCE_USERNAME: "postgres.YOUR_PROJECT_REF"
+  SPRING_DATASOURCE_PASSWORD: "replace-with-supabase-database-password"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: fishlist
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+  template:
+    metadata:
+      labels:
+        app: minio
+    spec:
+      containers:
+        - name: minio
+          image: minio/minio:latest
+          args:
+            - server
+            - /data
+            - --console-address
+            - ":9001"
+          env:
+            - name: MINIO_ROOT_USER
+              value: minioadmin
+            - name: MINIO_ROOT_PASSWORD
+              value: minioadmin
+          ports:
+            - containerPort: 9000
+              name: s3
+            - containerPort: 9001
+              name: console
+          volumeMounts:
+            - name: minio-data
+              mountPath: /data
+      volumes:
+        - name: minio-data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: fishlist
+spec:
+  selector:
+    app: minio
+  ports:
+    - name: s3
+      port: 9000
+      targetPort: s3
+    - name: console
+      port: 9001
+      targetPort: console
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fishlist-backend
+  namespace: fishlist
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fishlist-backend
+  template:
+    metadata:
+      labels:
+        app: fishlist-backend
+    spec:
+      containers:
+        - name: backend
+          image: mattconstant/fishlist:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "docker,supabase"
+            - name: SPRING_DATASOURCE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: fishlist-db
+                  key: SPRING_DATASOURCE_URL
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: fishlist-db
+                  key: SPRING_DATASOURCE_USERNAME
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: fishlist-db
+                  key: SPRING_DATASOURCE_PASSWORD
+            - name: MINIO_ENABLED
+              value: "true"
+            - name: MINIO_ENDPOINT
+              value: "http://minio:9000"
+            - name: MINIO_ACCESS_KEY
+              value: "minioadmin"
+            - name: MINIO_SECRET_KEY
+              value: "minioadmin"
+            - name: MINIO_BUCKET
+              value: "fishlist"
+            # This URL is used in presigned links returned to browser clients.
+            # Keep localhost if you use kubectl port-forward for MinIO.
+            - name: MINIO_PUBLIC_BASE_URL
+              value: "http://localhost:9000"
+            - name: OPENAI_ENABLED
+              value: "true"
+            - name: OPENAI_MODEL
+              value: "gpt-4.1-mini"
+            - name: ADMIN_USERNAME
+              value: "mattconstant"
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: fishlist-openai
+                  key: OPENAI_API_KEY
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fishlist-backend
+  namespace: fishlist
+spec:
+  selector:
+    app: fishlist-backend
+  ports:
+    - port: 8080
+      targetPort: http
+      protocol: TCP
+      name: http
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fishlist-frontend
+  namespace: fishlist
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fishlist-frontend
+  template:
+    metadata:
+      labels:
+        app: fishlist-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: mattconstant/fishlist-frontend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+              name: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fishlist-frontend
+  namespace: fishlist
+spec:
+  selector:
+    app: fishlist-frontend
+  ports:
+    - port: 3000
+      targetPort: http
+      protocol: TCP
+      name: http
+  type: ClusterIP

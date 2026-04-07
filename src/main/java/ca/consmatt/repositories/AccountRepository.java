@@ -18,5 +18,9 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
 
 	List<Account> findTop20ByUsernameContainingIgnoreCaseOrderByUsernameAsc(String username);
 
+	List<Account> findTop200ByUsernameContainingIgnoreCaseOrderByUsernameAsc(String username);
+
+	List<Account> findTop200ByOrderByUsernameAsc();
+
 }
 

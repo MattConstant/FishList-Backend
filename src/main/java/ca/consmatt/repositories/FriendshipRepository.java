@@ -15,4 +15,6 @@ public interface FriendshipRepository extends JpaRepository<Friendship, Long> {
 	Optional<Friendship> findByAccountA_IdAndAccountB_Id(Long accountAId, Long accountBId);
 
 	List<Friendship> findByAccountA_IdOrAccountB_Id(Long accountAId, Long accountBId);
+
+	void deleteByAccountA_IdOrAccountB_Id(Long accountAId, Long accountBId);
 }

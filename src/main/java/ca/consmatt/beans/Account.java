@@ -2,7 +2,10 @@ package ca.consmatt.beans;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -35,5 +38,9 @@ public class Account {
 	@NonNull
 	@JsonIgnore
 	private String password;
+
+	@Enumerated(EnumType.STRING)
+	@Column(nullable = false)
+	private AccountRole role = AccountRole.USER;
 
 }

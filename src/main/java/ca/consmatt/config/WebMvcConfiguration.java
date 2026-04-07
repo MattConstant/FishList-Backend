@@ -11,13 +11,18 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class WebMvcConfiguration implements WebMvcConfigurer {
 
 	private final ApiRequestLoggingInterceptor apiRequestLoggingInterceptor;
+	private final ApiRateLimitInterceptor apiRateLimitInterceptor;
 
-	public WebMvcConfiguration(ApiRequestLoggingInterceptor apiRequestLoggingInterceptor) {
+	public WebMvcConfiguration(
+			ApiRequestLoggingInterceptor apiRequestLoggingInterceptor,
+			ApiRateLimitInterceptor apiRateLimitInterceptor) {
 		this.apiRequestLoggingInterceptor = apiRequestLoggingInterceptor;
+		this.apiRateLimitInterceptor = apiRateLimitInterceptor;
 	}
 
 	@Override
 	public void addInterceptors(InterceptorRegistry registry) {
 		registry.addInterceptor(apiRequestLoggingInterceptor).addPathPatterns("/api/**");
+		registry.addInterceptor(apiRateLimitInterceptor).addPathPatterns("/api/**");
 	}
 }

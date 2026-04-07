@@ -23,4 +23,8 @@ public interface CatchCommentRepository extends JpaRepository<CatchComment, Long
 	void deleteByCatchRecord_Id(Long catchId);
 
 	void deleteByCatchRecord_Location_Id(Long locationId);
+
+	long countByAccount_Id(Long accountId);
+
+	void deleteByAccount_Id(Long accountId);
 }

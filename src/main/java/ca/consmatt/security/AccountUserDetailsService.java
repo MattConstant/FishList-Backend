@@ -7,6 +7,7 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
 import ca.consmatt.beans.Account;
+import ca.consmatt.beans.AccountRole;
 import ca.consmatt.repositories.AccountRepository;
 import lombok.RequiredArgsConstructor;
 
@@ -28,10 +29,11 @@ public class AccountUserDetailsService implements UserDetailsService {
 	public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
 		Account account = accountRepository.findByUsername(username)
 				.orElseThrow(() -> new UsernameNotFoundException("User not found: " + username));
+		AccountRole role = account.getRole() != null ? account.getRole() : AccountRole.USER;
 		return User.builder()
 				.username(account.getUsername())
 				.password(account.getPassword())
-				.roles("USER")
+				.roles(role.name())
 				.build();
 	}
 }

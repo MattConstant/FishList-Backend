@@ -16,6 +16,8 @@ public interface LocationRepository extends JpaRepository<Location, Long> {
 	 * @return locations owned by that account
 	 */
 	List<Location> findByAccount_Id(Long accountId);
+
+	long countByAccount_Id(Long accountId);
 }
 
 
