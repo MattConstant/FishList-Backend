@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,9 +25,11 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * Seeds sample accounts, species, conditions, locations, and catches when the database has no
- * accounts (typically first H2 in-memory startup).
+ * accounts (typically first H2 in-memory startup). Disabled when {@code prod} is active so
+ * deployed instances do not pay this cost at startup (or seed production DBs by accident).
  */
 @Component
+@Profile("!prod")
 @RequiredArgsConstructor
 public class DummyDataBootstrap implements CommandLineRunner {
 

@@ -37,6 +37,7 @@ public class SecurityConfig {
 				.cors(Customizer.withDefaults())
 				.authorizeHttpRequests(auth -> auth
 						.requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+						.requestMatchers("/api/health", "/api/healthz").permitAll()
 						.requestMatchers("/api/locations/heartbeat", "/api/locations/healthcheck").permitAll()
 						.requestMatchers(HttpMethod.POST, "/api/accounts", "/api/accounts/").permitAll()
 						.requestMatchers("/h2-console/**").permitAll()

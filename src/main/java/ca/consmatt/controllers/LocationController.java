@@ -61,16 +61,6 @@ public class LocationController {
 	private final CatchCommentRepository catchCommentRepo;
 
 	/**
-	 * Simple health check (unauthenticated). Available at {@code /heartbeat} and {@code /healthcheck}.
-	 *
-	 * @return plain-text greeting
-	 */
-	@GetMapping({ "/heartbeat", "/healthcheck" })
-	public String root() {
-		return "Hello, this is a plain string!";
-	}
-
-	/**
 	 * Lists all locations (summary rows include {@code accountId}).
 	 *
 	 * @return every stored location
