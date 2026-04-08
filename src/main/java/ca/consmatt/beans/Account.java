@@ -13,29 +13,33 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
 
 /**
- * Application user with credentials stored for Spring Security.
+ * Application user. Google Sign-In sets {@link #googleSub}; legacy rows may have null until backfilled.
+ * {@link #password} is unused for Google-only auth.
  */
 @NoArgsConstructor
 @AllArgsConstructor
-@RequiredArgsConstructor
 @Data
 @Entity
 public class Account {
 
 	@Id
-	@GeneratedValue(strategy=GenerationType.IDENTITY)
+	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
-	
+
 	@NonNull
 	private String username;
 
 	/**
-	 * BCrypt hash; never exposed in JSON.
+	 * Google subject ({@code sub}). Nullable only for pre-migration DB rows; new sign-ups always set this.
 	 */
-	@NonNull
+	@Column(name = "google_sub", nullable = true, unique = true, length = 255)
+	private String googleSub;
+
+	/**
+	 * Legacy field; unused for Google-only auth (nullable in DB).
+	 */
 	@JsonIgnore
 	private String password;
 

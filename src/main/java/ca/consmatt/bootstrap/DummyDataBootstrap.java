@@ -1,11 +1,8 @@
 package ca.consmatt.bootstrap;
 
-import java.util.UUID;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,7 +37,6 @@ public class DummyDataBootstrap implements CommandLineRunner {
 	private final FishRepository fishRepository;
 	private final ConditionRepository conditionRepository;
 	private final CatchRepository catchRepository;
-	private final PasswordEncoder passwordEncoder;
 
 	/**
 	 * {@inheritDoc}
@@ -61,18 +57,11 @@ public class DummyDataBootstrap implements CommandLineRunner {
 	}
 
 	private void loadDummyData() {
-		String plainPassword = System.getenv("FISHLIST_DUMMY_PASSWORD");
-		if (plainPassword == null || plainPassword.isBlank()) {
-			plainPassword = "DevOnly-" + UUID.randomUUID() + "-A1!";
-			log.warn(
-					"FISHLIST_DUMMY_PASSWORD not set. Generated one-time dummy password for seeded users: {}",
-					plainPassword);
-		}
-		String encoded = passwordEncoder.encode(plainPassword);
+		log.info("Seeding dev-only accounts with synthetic google_sub values (Google Sign-In only).");
 
-		Account user = accountRepository.save(new Account(null, "user", encoded, AccountRole.USER));
-		Account alice = accountRepository.save(new Account(null, "alice", encoded, AccountRole.USER));
-		Account bob = accountRepository.save(new Account(null, "bob", encoded, AccountRole.USER));
+		Account user = accountRepository.save(new Account(null, "user", "dev-google-sub-user", null, AccountRole.USER));
+		Account alice = accountRepository.save(new Account(null, "alice", "dev-google-sub-alice", null, AccountRole.USER));
+		Account bob = accountRepository.save(new Account(null, "bob", "dev-google-sub-bob", null, AccountRole.USER));
 
 		fishRepository.save(Fish.builder()
 				.species("Brook trout")

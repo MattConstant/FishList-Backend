@@ -14,6 +14,8 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
 
 	Optional<Account> findByUsername(String username);
 
+	Optional<Account> findByGoogleSub(String googleSub);
+
 	boolean existsByUsername(String username);
 
 	List<Account> findTop20ByUsernameContainingIgnoreCaseOrderByUsernameAsc(String username);
@@ -23,4 +25,3 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
 	List<Account> findTop200ByOrderByUsernameAsc();
 
 }
-

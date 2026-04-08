@@ -1,17 +1,14 @@
 package ca.consmatt.controllers;
 
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -22,16 +19,12 @@ import java.util.List;
 import java.util.Locale;
 
 import ca.consmatt.beans.Account;
-import ca.consmatt.beans.AccountRole;
 import ca.consmatt.beans.Friendship;
 import ca.consmatt.beans.Location;
 import ca.consmatt.dto.AccountResponse;
-import ca.consmatt.dto.CreateAccountRequest;
 import ca.consmatt.repositories.AccountRepository;
 import ca.consmatt.repositories.FriendshipRepository;
 import ca.consmatt.repositories.LocationRepository;
-import ca.consmatt.security.AdminProperties;
-import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 
@@ -48,8 +41,6 @@ public class AccountController {
 	private final AccountRepository accountRepository;
 	private final LocationRepository locationRepository;
 	private final FriendshipRepository friendshipRepository;
-	private final PasswordEncoder passwordEncoder;
-	private final AdminProperties adminProperties;
 
 	/**
 	 * Returns the authenticated user's public profile.
@@ -174,29 +165,6 @@ public class AccountController {
 		friendshipRepository.findByAccountA_IdAndAccountB_Id(minId, maxId)
 				.ifPresent(friendshipRepository::delete);
 		return ResponseEntity.noContent().build();
-	}
-
-	/**
-	 * Registers a new account (no authentication required).
-	 *
-	 * @param request username and plain password (validated)
-	 * @return 201 with {@link AccountResponse}, 409 if username exists (including DB constraint races),
-	 *         400 on validation failure
-	 */
-	@PostMapping({ "", "/" })
-	public ResponseEntity<AccountResponse> createAccount(@Valid @RequestBody CreateAccountRequest request) {
-		String username = request.username().trim();
-		if (accountRepository.existsByUsername(username)) {
-			throw new ResponseStatusException(HttpStatus.CONFLICT, "Username already taken");
-		}
-		try {
-			AccountRole role = adminProperties.isAdminUsername(username) ? AccountRole.ADMIN : AccountRole.USER;
-			Account saved = accountRepository
-					.save(new Account(null, username, passwordEncoder.encode(request.password()), role));
-			return ResponseEntity.status(HttpStatus.CREATED).body(new AccountResponse(saved.getId(), saved.getUsername()));
-		} catch (DataIntegrityViolationException e) {
-			throw new ResponseStatusException(HttpStatus.CONFLICT, "Username already taken");
-		}
 	}
 
 	private Account requireAccount(Authentication authentication) {
