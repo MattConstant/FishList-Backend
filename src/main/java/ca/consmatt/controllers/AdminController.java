@@ -9,7 +9,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -45,7 +44,6 @@ import static org.springframework.http.HttpStatus.UNAUTHORIZED;
  */
 @RestController
 @RequestMapping("/api/admin")
-@CrossOrigin
 @RequiredArgsConstructor
 @Validated
 public class AdminController {

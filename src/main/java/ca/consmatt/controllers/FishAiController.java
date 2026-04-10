@@ -3,7 +3,6 @@ package ca.consmatt.controllers;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -20,7 +19,6 @@ import lombok.RequiredArgsConstructor;
  */
 @RestController
 @RequestMapping("/api/ai")
-@CrossOrigin
 @RequiredArgsConstructor
 @ConditionalOnProperty(name = "openai.enabled", havingValue = "true")
 public class FishAiController {
