@@ -4,7 +4,6 @@ import java.util.List;
 import java.util.Optional;
 
 import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -16,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 import ca.consmatt.beans.Fish;
+import ca.consmatt.dto.CreateFishRequest;
 import ca.consmatt.repositories.FishRepository;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -25,7 +25,6 @@ import lombok.RequiredArgsConstructor;
  */
 @RestController
 @RequestMapping("/api/fish")
-@CrossOrigin
 @RequiredArgsConstructor
 public class FishController {
 
@@ -47,12 +46,12 @@ public class FishController {
 	}
 
 	/**
-	 * @param fish entity JSON
+	 * @param request species fields (not a persistent entity)
 	 * @return confirmation message with new id
 	 */
 	@PostMapping({ "", "/" })
-	public String createFish(@Valid @RequestBody Fish fish) {
-		Fish saved = fishRepo.save(fish);
+	public String createFish(@Valid @RequestBody CreateFishRequest request) {
+		Fish saved = fishRepo.save(request.toNewEntity());
 		return "Record added at index " + saved.getId();
 	}
 
@@ -65,19 +64,13 @@ public class FishController {
 
 	/**
 	 * @param id species primary key
-	 * @param updated replacement fields
+	 * @param request replacement fields (not a persistent entity)
 	 * @return updated entity
 	 */
 	@PutMapping("/{id}")
-	public Fish updateFish(@PathVariable Long id, @Valid @RequestBody Fish updated) {
+	public Fish updateFish(@PathVariable Long id, @Valid @RequestBody CreateFishRequest request) {
 		return fishRepo.findById(id).map(fish -> {
-			fish.setSpecies(updated.getSpecies());
-			fish.setAverageWeight(updated.getAverageWeight());
-			fish.setAverageLength(updated.getAverageLength());
-			fish.setMaxWeight(updated.getMaxWeight());
-			fish.setMaxLength(updated.getMaxLength());
-			fish.setImageUrl(updated.getImageUrl());
-			fish.setDescription(updated.getDescription());
+			request.applyTo(fish);
 			return fishRepo.save(fish);
 		}).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Fish not found with id " + id));
 	}

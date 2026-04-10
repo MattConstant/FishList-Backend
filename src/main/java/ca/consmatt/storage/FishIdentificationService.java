@@ -128,9 +128,8 @@ public class FishIdentificationService {
 			// Some models still return fenced JSON despite response_format hints.
 		}
 		String normalized = trimmed
-				.replaceFirst("^```json\\s*", "")
-				.replaceFirst("^```\\s*", "")
-				.replaceFirst("\\s*```$", "")
+				.replaceFirst("^```(?:json)?\\s*", "")
+				.replaceFirst("\\s*```\\s*$", "")
 				.trim();
 		return objectMapper.readTree(normalized);
 	}

@@ -5,7 +5,6 @@ import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -21,7 +20,6 @@ import ca.consmatt.dto.PresignPutRequest;
 import ca.consmatt.dto.PresignPutResponse;
 import ca.consmatt.storage.ImageUploadRateLimitService;
 import ca.consmatt.storage.ImageStorageService;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
@@ -32,7 +30,6 @@ import lombok.RequiredArgsConstructor;
  */
 @RestController
 @RequestMapping("/api/storage/images")
-@CrossOrigin
 @RequiredArgsConstructor
 @ConditionalOnProperty(name = "minio.enabled", havingValue = "true")
 @Validated
@@ -53,20 +50,12 @@ public class ImageStorageController {
 	@PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
 	public ImageUploadResponse upload(
 			@RequestParam("file") MultipartFile file,
-			Authentication authentication,
-			HttpServletRequest request) {
+			Authentication authentication) {
 		String username = authentication.getName();
-		String clientIp = resolveClientIp(request);
-		log.info(
-				"IMAGE_UPLOAD_ATTEMPT user={} ip={} filename={} sizeBytes={} contentType={}",
-				username,
-				clientIp,
-				file.getOriginalFilename(),
-				file.getSize(),
-				file.getContentType());
+		log.info("IMAGE_UPLOAD_ATTEMPT sizeBytes={}", file.getSize());
 		imageUploadRateLimitService.assertWithinDailyLimit(username);
 		ImageUploadResponse response = imageStorageService.upload(file, username);
-		log.info("IMAGE_UPLOAD_SUCCESS user={} ip={} objectKey={}", username, clientIp, response.objectKey());
+		log.info("IMAGE_UPLOAD_SUCCESS sizeBytes={}", response.sizeBytes());
 		return response;
 	}
 
@@ -78,19 +67,12 @@ public class ImageStorageController {
 	@PostMapping(path = "/presign", consumes = MediaType.APPLICATION_JSON_VALUE)
 	public PresignPutResponse presignPut(
 			@Valid @RequestBody PresignPutRequest requestBody,
-			Authentication authentication,
-			HttpServletRequest request) {
+			Authentication authentication) {
 		String username = authentication.getName();
-		String clientIp = resolveClientIp(request);
-		log.info(
-				"IMAGE_PRESIGN_ATTEMPT user={} ip={} filename={} contentType={}",
-				username,
-				clientIp,
-				requestBody.filename(),
-				requestBody.contentType());
+		log.info("IMAGE_PRESIGN_ATTEMPT");
 		imageUploadRateLimitService.assertWithinDailyLimit(username);
 		PresignPutResponse response = imageStorageService.presignPut(requestBody, username);
-		log.info("IMAGE_PRESIGN_SUCCESS user={} ip={} objectKey={}", username, clientIp, response.objectKey());
+		log.info("IMAGE_PRESIGN_SUCCESS expiresInSeconds={}", response.expiresInSeconds());
 		return response;
 	}
 
@@ -102,21 +84,5 @@ public class ImageStorageController {
 	@GetMapping("/download-url")
 	public PresignGetResponse presignGet(@RequestParam("key") @NotBlank(message = "key is required") String key) {
 		return imageStorageService.presignGet(key);
-	}
-
-	private String resolveClientIp(HttpServletRequest request) {
-		String xForwardedFor = request.getHeader("X-Forwarded-For");
-		if (xForwardedFor != null && !xForwardedFor.isBlank()) {
-			String firstIp = xForwardedFor.split(",")[0].trim();
-			if (!firstIp.isBlank()) {
-				return firstIp;
-			}
-		}
-		String xRealIp = request.getHeader("X-Real-IP");
-		if (xRealIp != null && !xRealIp.isBlank()) {
-			return xRealIp.trim();
-		}
-		String remoteAddr = request.getRemoteAddr();
-		return remoteAddr == null || remoteAddr.isBlank() ? "unknown" : remoteAddr;
 	}
 }

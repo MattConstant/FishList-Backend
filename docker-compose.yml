@@ -66,6 +66,8 @@ services:
       RATE_LIMIT_STORAGE_DOWNLOAD_URL_PER_MINUTE: ${RATE_LIMIT_STORAGE_DOWNLOAD_URL_PER_MINUTE:-60}
       RATE_LIMIT_LOCATION_WRITES_PER_MINUTE: ${RATE_LIMIT_LOCATION_WRITES_PER_MINUTE:-45}
       RATE_LIMIT_INTERACTIONS_PER_MINUTE: ${RATE_LIMIT_INTERACTIONS_PER_MINUTE:-120}
+      # Match previous 15MB image uploads; application.properties defaults to 8MB when unset (Sonar-friendly).
+      MULTIPART_MAX_SIZE: ${MULTIPART_MAX_SIZE:-15MB}
     depends_on:
       minio-init:
         condition: service_completed_successfully

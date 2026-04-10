@@ -24,12 +24,24 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import io.jsonwebtoken.security.Keys;
 
 /**
- * JWT bearer authentication (FishList-issued tokens), CORS, CSRF off for APIs.
+ * JWT bearer authentication (FishList-issued tokens) and CORS. CSRF is off: stateless API, JWT in
+ * {@code Authorization} only (not session cookies). Revisit if you add cookie-based auth.
  */
 @Configuration
 @EnableWebSecurity
 @org.springframework.boot.context.properties.EnableConfigurationProperties(CorsProperties.class)
 public class SecurityConfig {
+
+	private static final List<String> CORS_ALLOWED_REQUEST_HEADERS = List.of(
+			"Accept",
+			"Authorization",
+			"Cache-Control",
+			"Content-Type",
+			"If-Match",
+			"If-None-Match",
+			"Origin",
+			"Pragma",
+			"X-Requested-With");
 
 	@Bean
 	public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtAuthenticationConverter jwtAuthenticationConverter)
@@ -48,6 +60,7 @@ public class SecurityConfig {
 						.anyRequest().authenticated())
 				.oauth2ResourceServer(oauth2 -> oauth2
 						.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)))
+				// Stateless JWT in Authorization — not cookie session auth; see class Javadoc.
 				.csrf(csrf -> csrf.disable())
 				.headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()));
 		return http.build();
@@ -79,19 +92,24 @@ public class SecurityConfig {
 	 */
 	@Bean
 	public CorsConfigurationSource corsConfigurationSource(CorsProperties corsProperties) {
-		if (corsProperties.isAllowCredentials()) {
-			for (String pattern : corsProperties.getAllowedOriginPatterns()) {
-				if ("*".equals(pattern)) {
-					throw new IllegalStateException(
-							"app.cors.allow-credentials=true is incompatible with app.cors.allowed-origin-patterns=*; "
-									+ "list explicit origins (e.g. http://localhost:5173)");
-				}
+		List<String> patterns = corsProperties.getAllowedOriginPatterns();
+		if (patterns == null || patterns.isEmpty()) {
+			throw new IllegalStateException(
+					"app.cors.allowed-origin-patterns must be non-empty — set explicit origins (e.g. https://your-app.vercel.app)");
+		}
+		for (String pattern : patterns) {
+			if (pattern == null || pattern.isBlank()) {
+				throw new IllegalStateException("app.cors.allowed-origin-patterns must not contain blank entries");
+			}
+			if ("*".equals(pattern.trim())) {
+				throw new IllegalStateException(
+						"app.cors.allowed-origin-patterns must not be '*' — list explicit origins (browsers would allow any site to read responses)");
 			}
 		}
 		CorsConfiguration config = new CorsConfiguration();
-		config.setAllowedOriginPatterns(corsProperties.getAllowedOriginPatterns());
+		config.setAllowedOriginPatterns(patterns);
 		config.setAllowedMethods(List.of("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-		config.setAllowedHeaders(List.of("*"));
+		config.setAllowedHeaders(CORS_ALLOWED_REQUEST_HEADERS);
 		config.setExposedHeaders(List.of("Location", "Content-Disposition"));
 		config.setMaxAge(corsProperties.getMaxAgeSeconds());
 		config.setAllowCredentials(corsProperties.isAllowCredentials());

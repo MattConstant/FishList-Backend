@@ -9,7 +9,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,6 +26,7 @@ import ca.consmatt.beans.CatchComment;
 import ca.consmatt.beans.CatchLike;
 import ca.consmatt.beans.Location;
 import ca.consmatt.dto.AddCatchRequest;
+import ca.consmatt.dto.CreateLocationRequest;
 import ca.consmatt.dto.CatchCommentResponse;
 import ca.consmatt.dto.CatchCommentsPageResponse;
 import ca.consmatt.dto.CatchLikeResponse;
@@ -49,7 +49,6 @@ import lombok.RequiredArgsConstructor;
  */
 @RestController
 @RequestMapping("/api/locations")
-@CrossOrigin
 @RequiredArgsConstructor
 @Validated
 public class LocationController {
@@ -125,15 +124,15 @@ public class LocationController {
 	/**
 	 * Creates a location for the authenticated user (owner is set server-side).
 	 *
-	 * @param location JSON body (no {@code account} field required)
+	 * @param request location fields (not a persistent entity; no {@code account} in body)
 	 * @param authentication current user
 	 * @return 201 with message containing new id
 	 */
 	@PostMapping({ "", "/" })
-	public ResponseEntity<String> createLocation(@Valid @RequestBody Location location, Authentication authentication) {
+	public ResponseEntity<String> createLocation(@Valid @RequestBody CreateLocationRequest request,
+			Authentication authentication) {
 		Account account = requireAccount(authentication);
-		location.setAccount(account);
-		Location saved = locationRepo.save(location);
+		Location saved = locationRepo.save(request.toNewLocation(account));
 		return ResponseEntity.status(HttpStatus.CREATED).body("Record added at index " + saved.getId());
 	}
 
@@ -334,21 +333,17 @@ public class LocationController {
 	 * Updates mutable location fields (owner only).
 	 *
 	 * @param id location id
-	 * @param updatedLocation replacement field values
+	 * @param request replacement field values (not a persistent entity)
 	 * @param authentication current user
 	 * @return updated entity
 	 */
 	@PutMapping("/{id}")
-	public Location updateLocation(@PathVariable Long id, @Valid @RequestBody Location updatedLocation,
+	public Location updateLocation(@PathVariable Long id, @Valid @RequestBody CreateLocationRequest request,
 			Authentication authentication) {
 		Account account = requireAccount(authentication);
 		return locationRepo.findById(id).map(location -> {
 			assertLocationOwner(location, account);
-			location.setLocationName(updatedLocation.getLocationName());
-			location.setLatitude(updatedLocation.getLatitude());
-			location.setLongitude(updatedLocation.getLongitude());
-			location.setTimeStamp(updatedLocation.getTimeStamp());
-			location.setDetails(updatedLocation.getDetails());
+			request.applyTo(location);
 			return locationRepo.save(location);
 		}).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Location not found"));
 	}
