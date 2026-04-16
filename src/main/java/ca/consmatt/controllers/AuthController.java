@@ -14,6 +14,7 @@ import ca.consmatt.beans.AccountRole;
 import ca.consmatt.dto.AccountResponse;
 import ca.consmatt.dto.GoogleAuthRequest;
 import ca.consmatt.dto.GoogleAuthResponse;
+import ca.consmatt.policy.UsernamePolicy;
 import ca.consmatt.repositories.AccountRepository;
 import ca.consmatt.security.AdminProperties;
 import ca.consmatt.security.FishListJwtService;
@@ -34,6 +35,7 @@ public class AuthController {
 	private final AccountRepository accountRepository;
 	private final AdminProperties adminProperties;
 	private final FishListJwtService fishListJwtService;
+	private final UsernamePolicy usernamePolicy;
 
 	@PostMapping("/google")
 	public ResponseEntity<GoogleAuthResponse> google(@Valid @RequestBody GoogleAuthRequest request) {
@@ -49,14 +51,15 @@ public class AuthController {
 				.orElseGet(() -> createAccountFromGoogle(payload));
 
 		String accessToken = fishListJwtService.createAccessToken(account.getUsername());
-		return ResponseEntity.ok(new GoogleAuthResponse(accessToken, "Bearer", new AccountResponse(account.getId(), account.getUsername())));
+		return ResponseEntity.ok(new GoogleAuthResponse(accessToken, "Bearer",
+				new AccountResponse(account.getId(), account.getUsername(), account.getProfileImageKey())));
 	}
 
 	private Account createAccountFromGoogle(GoogleIdTokenPayload payload) {
 		String username = deriveUniqueUsername(payload.email(), payload.sub());
 		AccountRole role = adminProperties.isAdminUsername(username) ? AccountRole.ADMIN : AccountRole.USER;
 		try {
-			return accountRepository.save(new Account(null, username, payload.sub(), null, role));
+			return accountRepository.save(new Account(null, username, payload.sub(), null, role, null));
 		} catch (DataIntegrityViolationException e) {
 			return accountRepository.findByGoogleSub(payload.sub())
 					.orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "Could not create account"));
@@ -82,8 +85,11 @@ public class AuthController {
 		}
 		String candidate = base;
 		int n = 0;
-		while (accountRepository.existsByUsername(candidate)) {
+		while (accountRepository.existsByUsername(candidate) || !usernamePolicy.isAcceptableNewAccountUsername(candidate)) {
 			n++;
+			if (n > 5000) {
+				throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not allocate a username");
+			}
 			String suffix = "_" + n;
 			int maxBase = Math.max(1, 100 - suffix.length());
 			candidate = base.substring(0, Math.min(base.length(), maxBase)) + suffix;

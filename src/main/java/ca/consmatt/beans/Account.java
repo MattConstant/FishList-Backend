@@ -47,4 +47,10 @@ public class Account {
 	@Column(nullable = false)
 	private AccountRole role = AccountRole.USER;
 
+	/**
+	 * S3/MinIO object key under {@code uploads/{username}/…}; used for profile photo.
+	 */
+	@Column(name = "profile_image_key", length = 512)
+	private String profileImageKey;
+
 }

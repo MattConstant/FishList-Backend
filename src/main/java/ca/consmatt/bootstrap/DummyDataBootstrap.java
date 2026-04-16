@@ -59,9 +59,9 @@ public class DummyDataBootstrap implements CommandLineRunner {
 	private void loadDummyData() {
 		log.info("Seeding dev-only accounts with synthetic google_sub values (Google Sign-In only).");
 
-		Account user = accountRepository.save(new Account(null, "user", "dev-google-sub-user", null, AccountRole.USER));
-		Account alice = accountRepository.save(new Account(null, "alice", "dev-google-sub-alice", null, AccountRole.USER));
-		Account bob = accountRepository.save(new Account(null, "bob", "dev-google-sub-bob", null, AccountRole.USER));
+		Account user = accountRepository.save(new Account(null, "user", "dev-google-sub-user", null, AccountRole.USER, null));
+		Account alice = accountRepository.save(new Account(null, "alice", "dev-google-sub-alice", null, AccountRole.USER, null));
+		Account bob = accountRepository.save(new Account(null, "bob", "dev-google-sub-bob", null, AccountRole.USER, null));
 
 		fishRepository.save(Fish.builder()
 				.species("Brook trout")

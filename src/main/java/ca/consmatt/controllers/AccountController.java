@@ -1,13 +1,16 @@
 package ca.consmatt.controllers;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -21,9 +24,14 @@ import ca.consmatt.beans.Account;
 import ca.consmatt.beans.Friendship;
 import ca.consmatt.beans.Location;
 import ca.consmatt.dto.AccountResponse;
+import ca.consmatt.dto.AccountUpdateResponse;
+import ca.consmatt.dto.UpdateProfileRequest;
 import ca.consmatt.repositories.AccountRepository;
+import ca.consmatt.policy.UsernamePolicy;
 import ca.consmatt.repositories.FriendshipRepository;
 import ca.consmatt.repositories.LocationRepository;
+import ca.consmatt.security.FishListJwtService;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 
@@ -39,6 +47,8 @@ public class AccountController {
 	private final AccountRepository accountRepository;
 	private final LocationRepository locationRepository;
 	private final FriendshipRepository friendshipRepository;
+	private final FishListJwtService fishListJwtService;
+	private final UsernamePolicy usernamePolicy;
 
 	/**
 	 * Returns the authenticated user's public profile.
@@ -49,8 +59,63 @@ public class AccountController {
 	@GetMapping("/me")
 	public ResponseEntity<AccountResponse> getCurrentAccount(Authentication authentication) {
 		return accountRepository.findByUsername(authentication.getName())
-				.map(a -> ResponseEntity.ok(new AccountResponse(a.getId(), a.getUsername())))
+				.map(a -> ResponseEntity.ok(toResponse(a)))
 				.orElse(ResponseEntity.notFound().build());
+	}
+
+	/**
+	 * Updates the authenticated user's profile (username and/or profile image key).
+	 *
+	 * @param request partial update; {@code profileImageKey} empty string clears the image
+	 * @param authentication current user
+	 * @return updated profile and a new JWT when anything changed
+	 */
+	@PatchMapping(path = "/me", consumes = MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<AccountUpdateResponse> patchMyProfile(
+			@Valid @RequestBody UpdateProfileRequest request,
+			Authentication authentication) {
+		Account account = requireAccount(authentication);
+		String usernameBefore = account.getUsername();
+		boolean dirty = false;
+
+		if (request.profileImageKey() != null) {
+			String pk = request.profileImageKey();
+			if (pk.isEmpty()) {
+				account.setProfileImageKey(null);
+				dirty = true;
+			} else {
+				assertValidUserUploadKey(pk, usernameBefore);
+				account.setProfileImageKey(normalizeUploadKey(pk));
+				dirty = true;
+			}
+		}
+
+		if (request.username() != null) {
+			String nu = request.username().trim();
+			if (nu.isEmpty()) {
+				throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Username cannot be empty");
+			}
+			if (!nu.matches("^[a-zA-Z0-9_]{2,100}$")) {
+				throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+						"Username may only contain letters, numbers, and underscores (2–100 characters)");
+			}
+			usernamePolicy.validateProposedUsername(nu, account.getUsername());
+			if (!nu.equals(account.getUsername())) {
+				if (accountRepository.existsByUsername(nu)) {
+					throw new ResponseStatusException(HttpStatus.CONFLICT, "That username is already taken");
+				}
+				account.setUsername(nu);
+				dirty = true;
+			}
+		}
+
+		if (!dirty) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No changes");
+		}
+
+		accountRepository.save(account);
+		String accessToken = fishListJwtService.createAccessToken(account.getUsername());
+		return ResponseEntity.ok(new AccountUpdateResponse(toResponse(account), accessToken, "Bearer"));
 	}
 
 	/**
@@ -62,7 +127,7 @@ public class AccountController {
 	@GetMapping("/{id:\\d+}")
 	public ResponseEntity<AccountResponse> getAccountById(@PathVariable Long id) {
 		return accountRepository.findById(id)
-				.map(a -> ResponseEntity.ok(new AccountResponse(a.getId(), a.getUsername())))
+				.map(a -> ResponseEntity.ok(toResponse(a)))
 				.orElse(ResponseEntity.notFound().build());
 	}
 
@@ -95,7 +160,7 @@ public class AccountController {
 		String normalized = query == null ? "" : query.trim();
 		return accountRepository.findTop20ByUsernameContainingIgnoreCaseOrderByUsernameAsc(normalized).stream()
 				.filter(a -> !a.getId().equals(current.getId()))
-				.map(a -> new AccountResponse(a.getId(), a.getUsername()))
+				.map(AccountController::toResponse)
 				.toList();
 	}
 
@@ -111,7 +176,7 @@ public class AccountController {
 		return friendshipRepository.findByAccountA_IdOrAccountB_Id(current.getId(), current.getId()).stream()
 				.map(link -> {
 					Account friend = link.getAccountA().getId().equals(current.getId()) ? link.getAccountB() : link.getAccountA();
-					return new AccountResponse(friend.getId(), friend.getUsername());
+					return toResponse(friend);
 				})
 				.distinct()
 				.sorted((a, b) -> a.username().toLowerCase(Locale.ROOT).compareTo(b.username().toLowerCase(Locale.ROOT)))
@@ -142,7 +207,7 @@ public class AccountController {
 			Account second = current.getId().equals(minId) ? target : current;
 			friendshipRepository.save(new Friendship(null, first, second, Instant.now().toString()));
 		}
-		return new AccountResponse(target.getId(), target.getUsername());
+		return toResponse(target);
 	}
 
 	/**
@@ -168,5 +233,35 @@ public class AccountController {
 	private Account requireAccount(Authentication authentication) {
 		return accountRepository.findByUsername(authentication.getName())
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED));
+	}
+
+	private static AccountResponse toResponse(Account a) {
+		return new AccountResponse(a.getId(), a.getUsername(), a.getProfileImageKey());
+	}
+
+	private static String normalizeUploadKey(String objectKey) {
+		String normalized = objectKey.trim();
+		while (normalized.startsWith("/")) {
+			normalized = normalized.substring(1);
+		}
+		return normalized;
+	}
+
+	private static void assertValidUserUploadKey(String raw, String usernameAtUpload) {
+		if (raw == null || raw.isBlank()) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid object key");
+		}
+		String key = normalizeUploadKey(raw);
+		if (key.contains("..")) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid object key");
+		}
+		if (!key.startsWith("uploads/")) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid object key");
+		}
+		String prefix = "uploads/" + usernameAtUpload + "/";
+		if (!key.startsWith(prefix)) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+					"Profile image must be uploaded while signed in as this account (expected key under " + prefix + ")");
+		}
 	}
 }
