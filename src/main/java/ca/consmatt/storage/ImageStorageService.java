@@ -21,6 +21,7 @@ import ca.consmatt.dto.PresignPutRequest;
 import ca.consmatt.dto.PresignPutResponse;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
@@ -120,6 +121,22 @@ public class ImageStorageService {
 			return new PresignGetResponse(url, (int) TimeUnit.HOURS.toSeconds(PRESIGN_GET_HOURS));
 		} catch (Exception e) {
 			throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Could not create presigned GET URL", e);
+		}
+	}
+
+	/**
+	 * Deletes an object under {@code uploads/...}. Used when removing an image from a catch or admin
+	 * moderation.
+	 */
+	public void deleteUploadedObject(String objectKey) {
+		String normalizedKey = normalizeReadableKey(objectKey);
+		try {
+			s3Client.deleteObject(DeleteObjectRequest.builder()
+					.bucket(properties.getBucket())
+					.key(normalizedKey)
+					.build());
+		} catch (Exception e) {
+			throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Object storage delete failed", e);
 		}
 	}
 

@@ -3,6 +3,9 @@ package ca.consmatt.controllers;
 import java.util.List;
 import java.time.Instant;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
@@ -21,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 import ca.consmatt.beans.Account;
+import ca.consmatt.beans.AccountRole;
 import ca.consmatt.beans.Catch;
 import ca.consmatt.beans.CatchComment;
 import ca.consmatt.beans.CatchLike;
@@ -38,6 +42,7 @@ import ca.consmatt.repositories.CatchCommentRepository;
 import ca.consmatt.repositories.CatchRepository;
 import ca.consmatt.repositories.CatchLikeRepository;
 import ca.consmatt.repositories.LocationRepository;
+import ca.consmatt.storage.ImageStorageService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -45,7 +50,7 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * REST API for fishing locations and nested catch records. Create, update, and delete require
- * ownership; reads are available to any authenticated user unless noted.
+ * ownership (or admin for catch delete); reads are available to any authenticated user unless noted.
  */
 @RestController
 @RequestMapping("/api/locations")
@@ -53,11 +58,14 @@ import lombok.RequiredArgsConstructor;
 @Validated
 public class LocationController {
 
+	private static final Logger log = LoggerFactory.getLogger(LocationController.class);
+
 	private final LocationRepository locationRepo;
 	private final AccountRepository accountRepository;
 	private final CatchRepository catchRepo;
 	private final CatchLikeRepository catchLikeRepo;
 	private final CatchCommentRepository catchCommentRepo;
+	private final ObjectProvider<ImageStorageService> imageStorageService;
 
 	/**
 	 * Lists all locations (summary rows include {@code accountId}).
@@ -287,7 +295,7 @@ public class LocationController {
 	}
 
 	/**
-	 * Deletes one catch from a location (owner only).
+	 * Deletes one catch from a location (location owner, or an admin moderating any post).
 	 *
 	 * @param id location id
 	 * @param catchId catch id
@@ -300,9 +308,20 @@ public class LocationController {
 		Account account = requireAccount(authentication);
 		Location location = locationRepo.findById(id)
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Location not found"));
-		assertLocationOwner(location, account);
+		assertLocationOwnerOrAdmin(location, account);
 		Catch catchEntity = catchRepo.findByIdAndLocation_Id(catchId, id)
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Catch not found"));
+		for (String key : catchEntity.getImageUrlsList()) {
+			if (isBlobObjectKey(key)) {
+				imageStorageService.ifAvailable(svc -> {
+					try {
+						svc.deleteUploadedObject(key);
+					} catch (Exception ex) {
+						log.warn("DELETE_CATCH_STORAGE_FAILED key={} msg={}", key, ex.getMessage());
+					}
+				});
+			}
+		}
 		catchCommentRepo.deleteByCatchRecord_Id(catchEntity.getId());
 		catchLikeRepo.deleteByCatchRecord_Id(catchEntity.getId());
 		catchRepo.delete(catchEntity);
@@ -393,6 +412,24 @@ public class LocationController {
 		if (location.getAccount() == null || !location.getAccount().getId().equals(account.getId())) {
 			throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not the owner of this location");
 		}
+	}
+
+	private void assertLocationOwnerOrAdmin(Location location, Account account) {
+		if (location.getAccount() != null && location.getAccount().getId().equals(account.getId())) {
+			return;
+		}
+		if (account.getRole() == AccountRole.ADMIN) {
+			return;
+		}
+		throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not the owner of this location");
+	}
+
+	private static boolean isBlobObjectKey(String key) {
+		if (key == null) {
+			return false;
+		}
+		String k = key.trim();
+		return !k.startsWith("http://") && !k.startsWith("https://");
 	}
 
 	private List<String> normalizeImageUrls(List<String> imageUrls, String imageUrl) {
