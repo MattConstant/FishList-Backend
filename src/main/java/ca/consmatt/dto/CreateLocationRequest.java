@@ -2,6 +2,7 @@ package ca.consmatt.dto;
 
 import ca.consmatt.beans.Account;
 import ca.consmatt.beans.Location;
+import ca.consmatt.beans.PostVisibility;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
@@ -23,7 +24,8 @@ public record CreateLocationRequest(
 		@Size(max = 80, message = "timeStamp must be at most 80 characters")
 		String timeStamp,
 		@Size(max = 1000, message = "details must be at most 1000 characters")
-		String details) {
+		String details,
+		PostVisibility visibility) {
 
 	/** Builds a new {@link Location} with the given owner (id assigned on save). */
 	public Location toNewLocation(Account account) {
@@ -33,6 +35,7 @@ public record CreateLocationRequest(
 		location.setLongitude(longitude);
 		location.setTimeStamp(timeStamp);
 		location.setDetails(details);
+		location.setVisibility(visibility != null ? visibility : PostVisibility.PUBLIC);
 		location.setAccount(account);
 		return location;
 	}
@@ -44,5 +47,8 @@ public record CreateLocationRequest(
 		target.setLongitude(longitude);
 		target.setTimeStamp(timeStamp);
 		target.setDetails(details);
+		if (visibility != null) {
+			target.setVisibility(visibility);
+		}
 	}
 }

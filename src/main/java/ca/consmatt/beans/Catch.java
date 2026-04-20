@@ -2,9 +2,13 @@ package ca.consmatt.beans;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.Arrays;
 import java.util.List;
+
+import ca.consmatt.dto.FishDetailResponse;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -61,6 +65,26 @@ public class Catch {
 
 	@Column(length = 1000)
 	private String description;
+
+	/** JSON array of per-fish lines when one post lists multiple fish; {@code null} for legacy rows. */
+	@Column(name = "fish_details_json", length = 8192)
+	@JsonIgnore
+	private String fishDetailsJson;
+
+	private static final ObjectMapper FISH_JSON = new ObjectMapper();
+
+	@JsonProperty("fishDetails")
+	public List<FishDetailResponse> getFishDetails() {
+		if (fishDetailsJson == null || fishDetailsJson.isBlank()) {
+			return null;
+		}
+		try {
+			return FISH_JSON.readValue(fishDetailsJson, new TypeReference<List<FishDetailResponse>>() {
+			});
+		} catch (Exception e) {
+			return null;
+		}
+	}
 
 	/**
 	 * @return parent location id for JSON (location entity is not serialized)

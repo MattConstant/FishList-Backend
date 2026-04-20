@@ -62,23 +62,23 @@ public class ImageStorageService {
 
 	public ImageUploadResponse upload(MultipartFile file, String username) {
 		validateImageMultipart(file);
-		String objectKey = buildObjectKey(username, file.getOriginalFilename());
-		String contentType = file.getContentType();
+		String ext = resolveExtension(file);
+		String objectKey = buildObjectKey(username, ext);
+		String normalizedContentType = normalizeContentType(file.getContentType());
+		if (normalizedContentType.isEmpty()) {
+			normalizedContentType = "application/octet-stream";
+		}
 		try (InputStream in = file.getInputStream()) {
 			long size = file.getSize();
 			PutObjectRequest put = PutObjectRequest.builder()
 					.bucket(properties.getBucket())
 					.key(objectKey)
-					.contentType(contentType)
+					.contentType(normalizedContentType)
 					.build();
 			s3Client.putObject(put, RequestBody.fromInputStream(in, size));
-			String getUrl = "";
-			try {
-				getUrl = presignedGetUrl(objectKey);
-			} catch (Exception ignored) {
-				// Upload already succeeded. Some environments can write objects but fail presign URL generation.
-			}
-			return new ImageUploadResponse(properties.getBucket(), objectKey, contentType, size, getUrl);
+			// Do not presign here — clients use GET /api/storage/images/download-url?key=… .
+			// Presign after PUT was an extra failure point after the object already existed in the bucket.
+			return new ImageUploadResponse(properties.getBucket(), objectKey, normalizedContentType, size, "");
 		} catch (Exception e) {
 			throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Object storage upload failed", e);
 		}
@@ -175,7 +175,7 @@ public class ImageStorageService {
 		}
 		String normalizedContentType = normalizeContentType(file.getContentType());
 		validateImageContentType(normalizedContentType);
-		String ext = extension(file.getOriginalFilename());
+		String ext = resolveExtension(file);
 		if (ext.isEmpty() || !ALLOWED_EXTENSIONS.contains(ext)) {
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Allowed extensions: " + ALLOWED_EXTENSIONS);
 		}
@@ -252,9 +252,16 @@ public class ImageStorageService {
 		return null;
 	}
 
-	private String buildObjectKey(String username, String originalFilename) {
-		String ext = extension(originalFilename);
+	private static String resolveExtension(MultipartFile file) {
+		String ext = extension(file.getOriginalFilename());
 		if (ext.isEmpty()) {
+			ext = extensionFromContentType(normalizeContentType(file.getContentType()));
+		}
+		return ext;
+	}
+
+	private String buildObjectKey(String username, String ext) {
+		if (ext == null || ext.isEmpty()) {
 			ext = ".bin";
 		}
 		return "uploads/" + username + "/" + java.util.UUID.randomUUID() + ext;
@@ -269,5 +276,20 @@ public class ImageStorageService {
 			return "";
 		}
 		return name.substring(i).toLowerCase(Locale.ROOT);
+	}
+
+	/** When the multipart part has no filename (some mobile browsers), infer from Content-Type. */
+	private static String extensionFromContentType(String contentType) {
+		if (contentType == null || contentType.isEmpty()) {
+			return "";
+		}
+		return switch (contentType) {
+			case "image/jpeg" -> ".jpg";
+			case "image/png" -> ".png";
+			case "image/gif" -> ".gif";
+			case "image/webp" -> ".webp";
+			case "image/heic", "image/heif" -> ".heic";
+			default -> "";
+		};
 	}
 }

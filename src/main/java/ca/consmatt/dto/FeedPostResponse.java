@@ -1,5 +1,7 @@
 package ca.consmatt.dto;
 
+import ca.consmatt.beans.PostVisibility;
+
 /**
  * Flattened feed row used for paginated latest-post queries.
  */
@@ -19,5 +21,7 @@ public record FeedPostResponse(
 		String notes,
 		String description,
 		String imageUrl,
-		String imageUrls) {
+		String imageUrls,
+		String fishDetailsJson,
+		PostVisibility visibility) {
 }

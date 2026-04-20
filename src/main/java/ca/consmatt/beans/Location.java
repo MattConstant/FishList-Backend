@@ -2,7 +2,10 @@ package ca.consmatt.beans;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -58,6 +61,11 @@ public class Location {
 	@JoinColumn(name = "account_id")
 	@JsonIgnore
 	private Account account;
+
+	/** Null in older rows is treated as {@link PostVisibility#PUBLIC} in queries. */
+	@Enumerated(EnumType.STRING)
+	@Column(name = "visibility", length = 16)
+	private PostVisibility visibility;
 
 	/**
 	 * @return owning account id for API responses, or {@code null} if not loaded

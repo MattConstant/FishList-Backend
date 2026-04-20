@@ -19,10 +19,12 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
+import java.util.stream.Collectors;
 
 import ca.consmatt.beans.Account;
 import ca.consmatt.beans.Friendship;
 import ca.consmatt.beans.Location;
+import ca.consmatt.beans.PostVisibility;
 import ca.consmatt.dto.AccountResponse;
 import ca.consmatt.dto.AccountUpdateResponse;
 import ca.consmatt.dto.UpdateProfileRequest;
@@ -138,11 +140,40 @@ public class AccountController {
 	 * @return locations or 404 if the account does not exist
 	 */
 	@GetMapping("/{id:\\d+}/locations")
-	public ResponseEntity<List<Location>> getAccountLocations(@PathVariable Long id) {
+	public ResponseEntity<List<Location>> getAccountLocations(@PathVariable Long id,
+			Authentication authentication) {
 		if (!accountRepository.existsById(id)) {
 			return ResponseEntity.notFound().build();
 		}
-		return ResponseEntity.ok(locationRepository.findByAccount_Id(id));
+		Account viewer = requireAccount(authentication);
+		List<Location> all = locationRepository.findByAccount_Id(id);
+		if (viewer.getId().equals(id)) {
+			return ResponseEntity.ok(all);
+		}
+		boolean friendsWithOwner = areFriends(viewer.getId(), id);
+		List<Location> visible = all.stream()
+				.filter(loc -> isLocationVisibleToViewer(loc.getVisibility(), friendsWithOwner))
+				.collect(Collectors.toList());
+		return ResponseEntity.ok(visible);
+	}
+
+	private static boolean isLocationVisibleToViewer(PostVisibility visibility, boolean friendsWithOwner) {
+		if (visibility == null || visibility == PostVisibility.PUBLIC) {
+			return true;
+		}
+		if (visibility == PostVisibility.PRIVATE) {
+			return false;
+		}
+		return friendsWithOwner;
+	}
+
+	private boolean areFriends(Long accountIdA, Long accountIdB) {
+		if (accountIdA.equals(accountIdB)) {
+			return true;
+		}
+		long minId = Math.min(accountIdA, accountIdB);
+		long maxId = Math.max(accountIdA, accountIdB);
+		return friendshipRepository.findByAccountA_IdAndAccountB_Id(minId, maxId).isPresent();
 	}
 
 	/**

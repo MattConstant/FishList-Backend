@@ -1,6 +1,7 @@
 package ca.consmatt.controllers;
 
 import java.util.List;
+import java.util.stream.Collectors;
 import java.time.Instant;
 
 import org.slf4j.Logger;
@@ -23,6 +24,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import ca.consmatt.beans.Account;
 import ca.consmatt.beans.AccountRole;
 import ca.consmatt.beans.Catch;
@@ -30,6 +34,7 @@ import ca.consmatt.beans.CatchComment;
 import ca.consmatt.beans.CatchLike;
 import ca.consmatt.beans.Location;
 import ca.consmatt.dto.AddCatchRequest;
+import ca.consmatt.dto.FishEntryRequest;
 import ca.consmatt.dto.CreateLocationRequest;
 import ca.consmatt.dto.CatchCommentResponse;
 import ca.consmatt.dto.CatchCommentsPageResponse;
@@ -37,10 +42,12 @@ import ca.consmatt.dto.CatchLikeResponse;
 import ca.consmatt.dto.CreateCatchCommentRequest;
 import ca.consmatt.dto.FeedPostResponse;
 import ca.consmatt.dto.LocationDetailResponse;
+import ca.consmatt.beans.PostVisibility;
 import ca.consmatt.repositories.AccountRepository;
 import ca.consmatt.repositories.CatchCommentRepository;
 import ca.consmatt.repositories.CatchRepository;
 import ca.consmatt.repositories.CatchLikeRepository;
+import ca.consmatt.repositories.FriendshipRepository;
 import ca.consmatt.repositories.LocationRepository;
 import ca.consmatt.storage.ImageStorageService;
 import jakarta.validation.Valid;
@@ -60,11 +67,15 @@ public class LocationController {
 
 	private static final Logger log = LoggerFactory.getLogger(LocationController.class);
 
+	/** Local mapper — avoids requiring a Spring {@code ObjectMapper} bean (some images exclude Jackson auto-config). */
+	private static final ObjectMapper FISH_DETAILS_JSON = new ObjectMapper();
+
 	private final LocationRepository locationRepo;
 	private final AccountRepository accountRepository;
 	private final CatchRepository catchRepo;
 	private final CatchLikeRepository catchLikeRepo;
 	private final CatchCommentRepository catchCommentRepo;
+	private final FriendshipRepository friendshipRepository;
 	private final ObjectProvider<ImageStorageService> imageStorageService;
 
 	/**
@@ -83,14 +94,20 @@ public class LocationController {
 	@GetMapping("/feed")
 	public List<FeedPostResponse> getFeedPosts(
 			@RequestParam(name = "offset", defaultValue = "0") @Min(value = 0, message = "offset must be >= 0") int offset,
-			@RequestParam(name = "limit", defaultValue = "24") @Min(value = 1, message = "limit must be >= 1") @Max(value = 100, message = "limit must be <= 100") int limit) {
+			@RequestParam(name = "limit", defaultValue = "24") @Min(value = 1, message = "limit must be >= 1") @Max(value = 100, message = "limit must be <= 100") int limit,
+			Authentication authentication) {
 		int normalizedOffset = Math.max(offset, 0);
 		int normalizedLimit = Math.min(Math.max(limit, 1), 100);
 		int page = normalizedOffset / normalizedLimit;
 		int pageOffset = page * normalizedLimit;
 
+		Account viewer = requireAccount(authentication);
 		// Query one page and trim in-memory if offset isn't page-aligned.
-		List<FeedPostResponse> batch = catchRepo.findFeedPosts(PageRequest.of(page, normalizedLimit));
+		List<FeedPostResponse> batch = catchRepo.findFeedPostsForViewer(
+				viewer.getId(),
+				ca.consmatt.beans.PostVisibility.PUBLIC,
+				ca.consmatt.beans.PostVisibility.FRIENDS,
+				PageRequest.of(page, normalizedLimit));
 		if (normalizedOffset == pageOffset) {
 			return batch;
 		}
@@ -108,8 +125,11 @@ public class LocationController {
 	 * @return catches or 404 if the location is missing
 	 */
 	@GetMapping("/{id}/catches")
-	public ResponseEntity<List<Catch>> getCatchesForLocation(@PathVariable Long id) {
-		if (!locationRepo.existsById(id)) {
+	public ResponseEntity<List<Catch>> getCatchesForLocation(@PathVariable Long id, Authentication authentication) {
+		Account viewer = requireAccount(authentication);
+		Location location = locationRepo.findById(id)
+				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Location not found"));
+		if (!canViewLocation(location, viewer)) {
 			return ResponseEntity.notFound().build();
 		}
 		return ResponseEntity.ok(catchRepo.findByLocation_IdOrderByIdAsc(id));
@@ -122,8 +142,11 @@ public class LocationController {
 	 * @return detail payload or 404
 	 */
 	@GetMapping("/{id}")
-	public ResponseEntity<LocationDetailResponse> getLocationById(@PathVariable Long id) {
+	public ResponseEntity<LocationDetailResponse> getLocationById(@PathVariable Long id,
+			Authentication authentication) {
+		Account viewer = requireAccount(authentication);
 		return locationRepo.findById(id)
+				.filter(loc -> canViewLocation(loc, viewer))
 				.map(loc -> ResponseEntity.ok(LocationDetailResponse.from(loc,
 						catchRepo.findByLocation_IdOrderByIdAsc(id))))
 				.orElse(ResponseEntity.notFound().build());
@@ -159,20 +182,63 @@ public class LocationController {
 		Location location = locationRepo.findById(id)
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Location not found"));
 		assertLocationOwner(location, account);
-		int quantity = request.quantity() != null ? request.quantity() : 1;
+		List<FishEntryRequest> lines = resolveFishLines(request);
 		List<String> imageUrls = normalizeImageUrls(request.imageUrls(), request.imageUrl());
+
+		String speciesOut;
+		int quantityOut;
+		Double lengthOut;
+		Double weightOut;
+		String notesOut;
+		String fishDetailsJsonOut = null;
+
+		if (lines.size() == 1) {
+			FishEntryRequest a = lines.get(0);
+			speciesOut = a.species().trim();
+			quantityOut = request.quantity() != null ? request.quantity() : 1;
+			lengthOut = a.lengthCm();
+			weightOut = a.weightKg();
+			notesOut = a.notes();
+		} else {
+			speciesOut = lines.stream().map(l -> l.species().trim()).collect(Collectors.joining(", "));
+			quantityOut = lines.size();
+			lengthOut = null;
+			weightOut = null;
+			notesOut = null;
+			try {
+				fishDetailsJsonOut = FISH_DETAILS_JSON.writeValueAsString(lines);
+			} catch (JsonProcessingException e) {
+				throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not serialize fish details");
+			}
+		}
+
 		Catch catchEntity = Catch.builder()
 				.location(location)
-				.species(request.species().trim())
-				.quantity(quantity)
-				.lengthCm(request.lengthCm())
-				.weightKg(request.weightKg())
-				.notes(request.notes())
+				.species(speciesOut)
+				.quantity(quantityOut)
+				.lengthCm(lengthOut)
+				.weightKg(weightOut)
+				.notes(notesOut)
+				.fishDetailsJson(fishDetailsJsonOut)
 				.imageUrl(imageUrls.isEmpty() ? null : imageUrls.get(0))
 				.imageUrlsRaw(String.join("\n", imageUrls))
 				.description(request.description())
 				.build();
 		return ResponseEntity.status(HttpStatus.CREATED).body(catchRepo.save(catchEntity));
+	}
+
+	private List<FishEntryRequest> resolveFishLines(AddCatchRequest request) {
+		if (request.fish() != null && !request.fish().isEmpty()) {
+			return request.fish();
+		}
+		if (request.species() == null || request.species().isBlank()) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "species or fish list is required");
+		}
+		return List.of(new FishEntryRequest(
+				request.species().trim(),
+				request.lengthCm(),
+				request.weightKg(),
+				request.notes()));
 	}
 
 	/**
@@ -184,7 +250,7 @@ public class LocationController {
 			@RequestParam(name = "limit", defaultValue = "3") @Min(value = 1, message = "limit must be >= 1") @Max(value = 20, message = "limit must be <= 20") int limit,
 			Authentication authentication) {
 		Account account = requireAccount(authentication);
-		Catch catchEntity = requireCatchInLocation(id, catchId);
+		Catch catchEntity = requireVisibleCatchInLocation(id, catchId, account);
 		int normalizedOffset = Math.max(offset, 0);
 		int normalizedLimit = Math.min(Math.max(limit, 1), 20);
 		int requestWindow = normalizedOffset + normalizedLimit;
@@ -214,7 +280,7 @@ public class LocationController {
 	public ResponseEntity<CatchCommentResponse> addCatchComment(@PathVariable Long id, @PathVariable Long catchId,
 			@Valid @RequestBody CreateCatchCommentRequest request, Authentication authentication) {
 		Account account = requireAccount(authentication);
-		Catch catchEntity = requireCatchInLocation(id, catchId);
+		Catch catchEntity = requireVisibleCatchInLocation(id, catchId, account);
 		CatchComment saved = catchCommentRepo.save(new CatchComment(
 				null,
 				catchEntity,
@@ -231,7 +297,7 @@ public class LocationController {
 	public ResponseEntity<Void> deleteCatchComment(@PathVariable Long id, @PathVariable Long catchId,
 			@PathVariable Long commentId, Authentication authentication) {
 		Account account = requireAccount(authentication);
-		Catch catchEntity = requireCatchInLocation(id, catchId);
+		Catch catchEntity = requireVisibleCatchInLocation(id, catchId, account);
 		CatchComment comment = catchCommentRepo.findByIdAndCatchRecord_Id(commentId, catchEntity.getId())
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Comment not found"));
 
@@ -254,7 +320,7 @@ public class LocationController {
 	public CatchLikeResponse getCatchLike(@PathVariable Long id, @PathVariable Long catchId,
 			Authentication authentication) {
 		Account account = requireAccount(authentication);
-		Catch catchEntity = requireCatchInLocation(id, catchId);
+		Catch catchEntity = requireVisibleCatchInLocation(id, catchId, account);
 		long likesCount = catchLikeRepo.countByCatchRecord_Id(catchEntity.getId());
 		boolean likedByMe = catchLikeRepo.existsByCatchRecord_IdAndAccount_Id(catchEntity.getId(), account.getId());
 		return new CatchLikeResponse(catchEntity.getId(), likesCount, likedByMe);
@@ -267,7 +333,7 @@ public class LocationController {
 	public CatchLikeResponse likeCatch(@PathVariable Long id, @PathVariable Long catchId,
 			Authentication authentication) {
 		Account account = requireAccount(authentication);
-		Catch catchEntity = requireCatchInLocation(id, catchId);
+		Catch catchEntity = requireVisibleCatchInLocation(id, catchId, account);
 
 		boolean alreadyLiked = catchLikeRepo.existsByCatchRecord_IdAndAccount_Id(catchEntity.getId(), account.getId());
 		if (!alreadyLiked) {
@@ -285,7 +351,7 @@ public class LocationController {
 	public CatchLikeResponse unlikeCatch(@PathVariable Long id, @PathVariable Long catchId,
 			Authentication authentication) {
 		Account account = requireAccount(authentication);
-		Catch catchEntity = requireCatchInLocation(id, catchId);
+		Catch catchEntity = requireVisibleCatchInLocation(id, catchId, account);
 
 		catchLikeRepo.findByCatchRecord_IdAndAccount_Id(catchEntity.getId(), account.getId())
 				.ifPresent(catchLikeRepo::delete);
@@ -386,6 +452,18 @@ public class LocationController {
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Catch not found"));
 	}
 
+	private Catch requireVisibleCatchInLocation(Long locationId, Long catchId, Account viewer) {
+		Catch c = requireCatchInLocation(locationId, catchId);
+		Location loc = c.getLocation();
+		if (loc == null) {
+			throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Catch not found");
+		}
+		if (!canViewLocation(loc, viewer)) {
+			throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Catch not found");
+		}
+		return c;
+	}
+
 	private CatchCommentResponse toCatchCommentResponse(CatchComment comment, Account currentAccount) {
 		Long accountId = comment.getAccount() != null ? comment.getAccount().getId() : null;
 		String username = comment.getAccount() != null ? comment.getAccount().getUsername() : "unknown";
@@ -412,6 +490,32 @@ public class LocationController {
 		if (location.getAccount() == null || !location.getAccount().getId().equals(account.getId())) {
 			throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not the owner of this location");
 		}
+	}
+
+	/**
+	 * Whether the viewer may read this location (detail, catches list, comments, likes).
+	 */
+	private boolean canViewLocation(Location location, Account viewer) {
+		Account owner = location.getAccount();
+		if (owner == null) {
+			return false;
+		}
+		if (owner.getId().equals(viewer.getId())) {
+			return true;
+		}
+		PostVisibility vis = location.getVisibility();
+		if (vis == null || vis == PostVisibility.PUBLIC) {
+			return true;
+		}
+		if (vis == PostVisibility.PRIVATE) {
+			return false;
+		}
+		// FRIENDS
+		Long a = owner.getId();
+		Long b = viewer.getId();
+		long minId = Math.min(a, b);
+		long maxId = Math.max(a, b);
+		return friendshipRepository.findByAccountA_IdAndAccountB_Id(minId, maxId).isPresent();
 	}
 
 	private void assertLocationOwnerOrAdmin(Location location, Account account) {
