@@ -40,12 +40,24 @@ public class ApiRateLimitInterceptor implements HandlerInterceptor {
 	@Value("${rate-limit.interactions.per-minute:120}")
 	private int interactionsPerMinute;
 
+	@Value("${rate-limit.auth-login.per-minute:20}")
+	private int authLoginPerMinute;
+
+	@Value("${rate-limit.auth-register.per-minute:10}")
+	private int authRegisterPerMinute;
+
 	@Override
 	public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
 		String method = request.getMethod();
 		String path = request.getRequestURI();
 		String principal = resolvePrincipal(request);
 
+		if ("POST".equals(method) && path.equals("/api/auth/login")) {
+			enforce("auth-login", principal, authLoginPerMinute, 60_000L);
+		}
+		if ("POST".equals(method) && path.equals("/api/auth/register")) {
+			enforce("auth-register", principal, authRegisterPerMinute, 60_000L);
+		}
 		if ("GET".equals(method) && path.startsWith("/api/locations/feed")) {
 			enforce("feed", principal, feedPerMinute, 60_000L);
 		}

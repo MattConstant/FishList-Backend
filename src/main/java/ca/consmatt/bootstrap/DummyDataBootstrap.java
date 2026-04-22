@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 
 import ca.consmatt.beans.Account;
@@ -37,6 +38,7 @@ public class DummyDataBootstrap implements CommandLineRunner {
 	private final FishRepository fishRepository;
 	private final ConditionRepository conditionRepository;
 	private final CatchRepository catchRepository;
+	private final PasswordEncoder passwordEncoder;
 
 	/**
 	 * {@inheritDoc}
@@ -57,11 +59,12 @@ public class DummyDataBootstrap implements CommandLineRunner {
 	}
 
 	private void loadDummyData() {
-		log.info("Seeding dev-only accounts with synthetic google_sub values (Google Sign-In only).");
+		log.info("Seeding dev-only accounts (Google + password login: password \"fishlist\").");
 
-		Account user = accountRepository.save(new Account(null, "user", "dev-google-sub-user", null, AccountRole.USER, null));
-		Account alice = accountRepository.save(new Account(null, "alice", "dev-google-sub-alice", null, AccountRole.USER, null));
-		Account bob = accountRepository.save(new Account(null, "bob", "dev-google-sub-bob", null, AccountRole.USER, null));
+		String devPw = passwordEncoder.encode("fishlist");
+		Account user = accountRepository.save(new Account(null, "user", "dev-google-sub-user", devPw, AccountRole.USER, null));
+		Account alice = accountRepository.save(new Account(null, "alice", "dev-google-sub-alice", devPw, AccountRole.USER, null));
+		Account bob = accountRepository.save(new Account(null, "bob", "dev-google-sub-bob", devPw, AccountRole.USER, null));
 
 		fishRepository.save(Fish.builder()
 				.species("Brook trout")

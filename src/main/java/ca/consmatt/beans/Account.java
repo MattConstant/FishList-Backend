@@ -38,7 +38,7 @@ public class Account {
 	private String googleSub;
 
 	/**
-	 * Legacy field; unused for Google-only auth (nullable in DB).
+	 * BCrypt password hash for username/password login; {@code null} means Google-only (or not set).
 	 */
 	@JsonIgnore
 	private String password;

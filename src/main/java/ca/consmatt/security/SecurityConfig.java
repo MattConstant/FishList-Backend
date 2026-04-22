@@ -16,6 +16,8 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -31,6 +33,11 @@ import io.jsonwebtoken.security.Keys;
 @EnableWebSecurity
 @org.springframework.boot.context.properties.EnableConfigurationProperties(CorsProperties.class)
 public class SecurityConfig {
+
+	@Bean
+	public PasswordEncoder passwordEncoder() {
+		return new BCryptPasswordEncoder();
+	}
 
 	private static final List<String> CORS_ALLOWED_REQUEST_HEADERS = List.of(
 			"Accept",
@@ -53,7 +60,7 @@ public class SecurityConfig {
 						.requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
 						.requestMatchers("/api/health", "/api/healthz").permitAll()
 						.requestMatchers("/api/locations/heartbeat", "/api/locations/healthcheck").permitAll()
-						.requestMatchers(HttpMethod.POST, "/api/auth/google").permitAll()
+						.requestMatchers(HttpMethod.POST, "/api/auth/google", "/api/auth/login", "/api/auth/register").permitAll()
 						.requestMatchers("/h2-console/**").permitAll()
 						.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 						.requestMatchers("/api/**").authenticated()

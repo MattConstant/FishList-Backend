@@ -14,6 +14,8 @@ import ca.consmatt.beans.AccountRole;
 import ca.consmatt.dto.AccountResponse;
 import ca.consmatt.dto.GoogleAuthRequest;
 import ca.consmatt.dto.GoogleAuthResponse;
+import ca.consmatt.dto.PasswordLoginRequest;
+import ca.consmatt.dto.RegisterRequest;
 import ca.consmatt.policy.UsernamePolicy;
 import ca.consmatt.repositories.AccountRepository;
 import ca.consmatt.security.AdminProperties;
@@ -22,6 +24,7 @@ import ca.consmatt.security.GoogleIdTokenVerifierService;
 import ca.consmatt.security.GoogleIdTokenVerifierService.GoogleIdTokenPayload;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 /**
  * Google Sign-In token exchange: validates Google ID token, returns FishList JWT.
@@ -36,6 +39,60 @@ public class AuthController {
 	private final AdminProperties adminProperties;
 	private final FishListJwtService fishListJwtService;
 	private final UsernamePolicy usernamePolicy;
+	private final PasswordEncoder passwordEncoder;
+
+	/**
+	 * Username + password login. {@link Account#getPassword()} must hold a BCrypt hash (see dev seed data).
+	 * Google-only accounts without a stored hash receive 401.
+	 */
+	@PostMapping("/login")
+	public ResponseEntity<GoogleAuthResponse> login(@Valid @RequestBody PasswordLoginRequest request) {
+		String u = request.username().trim();
+		if (u.isEmpty()) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Username required");
+		}
+		Account account = accountRepository.findByUsername(u)
+				.orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid username or password"));
+		String hash = account.getPassword();
+		if (hash == null || hash.isBlank()) {
+			throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid username or password");
+		}
+		if (!passwordEncoder.matches(request.password(), hash)) {
+			throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid username or password");
+		}
+		String accessToken = fishListJwtService.createAccessToken(account.getUsername());
+		return ResponseEntity.ok(new GoogleAuthResponse(accessToken, "Bearer",
+				new AccountResponse(account.getId(), account.getUsername(), account.getProfileImageKey())));
+	}
+
+	/**
+	 * Create a password-backed account (no Google link). Username rules match profile updates.
+	 */
+	@PostMapping("/register")
+	public ResponseEntity<GoogleAuthResponse> register(@Valid @RequestBody RegisterRequest request) {
+		String u = request.username().trim();
+		if (u.length() < 2 || u.length() > 100) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+					"Username must be between 2 and 100 characters");
+		}
+		if (!u.matches("^[a-zA-Z0-9_]{2,100}$")) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+					"Username may only contain letters, numbers, and underscores (2–100 characters)");
+		}
+		usernamePolicy.validateProposedUsername(u, null);
+		if (accountRepository.existsByUsername(u)) {
+			throw new ResponseStatusException(HttpStatus.CONFLICT, "That username is already taken");
+		}
+		String hash = passwordEncoder.encode(request.password());
+		try {
+			Account saved = accountRepository.save(new Account(null, u, null, hash, AccountRole.USER, null));
+			String accessToken = fishListJwtService.createAccessToken(saved.getUsername());
+			return ResponseEntity.ok(new GoogleAuthResponse(accessToken, "Bearer",
+					new AccountResponse(saved.getId(), saved.getUsername(), saved.getProfileImageKey())));
+		} catch (DataIntegrityViolationException e) {
+			throw new ResponseStatusException(HttpStatus.CONFLICT, "That username is already taken");
+		}
+	}
 
 	@PostMapping("/google")
 	public ResponseEntity<GoogleAuthResponse> google(@Valid @RequestBody GoogleAuthRequest request) {
