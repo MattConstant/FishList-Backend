@@ -164,6 +164,8 @@ public class LocationController {
 			Authentication authentication) {
 		Account account = requireAccount(authentication);
 		Location saved = locationRepo.save(request.toNewLocation(account));
+		log.info("LOCATION_CREATED user={} id={} name=\"{}\" visibility={}", account.getUsername(), saved.getId(),
+				saved.getLocationName(), saved.getVisibility());
 		return ResponseEntity.status(HttpStatus.CREATED).body("Record added at index " + saved.getId());
 	}
 
@@ -224,7 +226,10 @@ public class LocationController {
 				.imageUrlsRaw(String.join("\n", imageUrls))
 				.description(request.description())
 				.build();
-		return ResponseEntity.status(HttpStatus.CREATED).body(catchRepo.save(catchEntity));
+		Catch saved = catchRepo.save(catchEntity);
+		log.info("CATCH_ADDED      user={} location={} id={} species=\"{}\" qty={} photos={}", account.getUsername(),
+				location.getId(), saved.getId(), speciesOut, quantityOut, imageUrls.size());
+		return ResponseEntity.status(HttpStatus.CREATED).body(saved);
 	}
 
 	private List<FishEntryRequest> resolveFishLines(AddCatchRequest request) {
@@ -287,6 +292,8 @@ public class LocationController {
 				account,
 				request.message().trim(),
 				Instant.now().toString()));
+		log.info("COMMENT_ADDED    user={} catch={} commentId={}", account.getUsername(), catchEntity.getId(),
+				saved.getId());
 		return ResponseEntity.status(HttpStatus.CREATED).body(toCatchCommentResponse(saved, account));
 	}
 
@@ -310,6 +317,8 @@ public class LocationController {
 		}
 
 		catchCommentRepo.delete(comment);
+		log.info("COMMENT_DELETED  user={} catch={} commentId={}", account.getUsername(), catchEntity.getId(),
+				commentId);
 		return ResponseEntity.noContent().build();
 	}
 
@@ -338,6 +347,7 @@ public class LocationController {
 		boolean alreadyLiked = catchLikeRepo.existsByCatchRecord_IdAndAccount_Id(catchEntity.getId(), account.getId());
 		if (!alreadyLiked) {
 			catchLikeRepo.save(new CatchLike(null, account, catchEntity));
+			log.info("LIKE             user={} catch={}", account.getUsername(), catchEntity.getId());
 		}
 
 		long likesCount = catchLikeRepo.countByCatchRecord_Id(catchEntity.getId());
@@ -353,8 +363,15 @@ public class LocationController {
 		Account account = requireAccount(authentication);
 		Catch catchEntity = requireVisibleCatchInLocation(id, catchId, account);
 
+		boolean[] removed = { false };
 		catchLikeRepo.findByCatchRecord_IdAndAccount_Id(catchEntity.getId(), account.getId())
-				.ifPresent(catchLikeRepo::delete);
+				.ifPresent(like -> {
+					catchLikeRepo.delete(like);
+					removed[0] = true;
+				});
+		if (removed[0]) {
+			log.info("UNLIKE           user={} catch={}", account.getUsername(), catchEntity.getId());
+		}
 
 		long likesCount = catchLikeRepo.countByCatchRecord_Id(catchEntity.getId());
 		return new CatchLikeResponse(catchEntity.getId(), likesCount, false);
@@ -391,6 +408,15 @@ public class LocationController {
 		catchCommentRepo.deleteByCatchRecord_Id(catchEntity.getId());
 		catchLikeRepo.deleteByCatchRecord_Id(catchEntity.getId());
 		catchRepo.delete(catchEntity);
+		log.info("CATCH_DELETED    user={} location={} catchId={}", account.getUsername(), id, catchId);
+
+		// Locations only exist as a container for catches; if the last one is gone,
+		// drop the location too so it doesn't linger as an empty pin on the user's profile.
+		if (catchRepo.countByLocation_Id(id) == 0) {
+			locationRepo.deleteById(id);
+			log.info("LOCATION_AUTO_DELETED user={} id={} reason=last_catch_removed",
+					account.getUsername(), id);
+		}
 		return ResponseEntity.noContent().build();
 	}
 
@@ -411,6 +437,7 @@ public class LocationController {
 		catchLikeRepo.deleteByCatchRecord_Location_Id(id);
 		catchRepo.deleteByLocation_Id(id);
 		locationRepo.deleteById(id);
+		log.info("LOCATION_DELETED user={} id={}", account.getUsername(), id);
 		return ResponseEntity.ok("deleted");
 	}
 
@@ -429,7 +456,10 @@ public class LocationController {
 		return locationRepo.findById(id).map(location -> {
 			assertLocationOwner(location, account);
 			request.applyTo(location);
-			return locationRepo.save(location);
+			Location saved = locationRepo.save(location);
+			log.info("LOCATION_UPDATED user={} id={} name=\"{}\" visibility={}", account.getUsername(), saved.getId(),
+					saved.getLocationName(), saved.getVisibility());
+			return saved;
 		}).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Location not found"));
 	}
 

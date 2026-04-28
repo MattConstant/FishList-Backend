@@ -63,4 +63,7 @@ public interface CatchRepository extends JpaRepository<Catch, Long> {
 	void deleteByLocation_Id(Long locationId);
 
 	long countByLocation_Account_Id(Long accountId);
+
+	/** Number of catches still attached to a location (used to auto-prune empty locations). */
+	long countByLocation_Id(Long locationId);
 }

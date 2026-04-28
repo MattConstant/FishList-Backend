@@ -1,5 +1,7 @@
 package ca.consmatt.controllers;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -17,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.stream.Collectors;
@@ -45,6 +48,8 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 @Validated
 public class AccountController {
+
+	private static final Logger log = LoggerFactory.getLogger(AccountController.class);
 
 	private final AccountRepository accountRepository;
 	private final LocationRepository locationRepository;
@@ -79,16 +84,19 @@ public class AccountController {
 		Account account = requireAccount(authentication);
 		String usernameBefore = account.getUsername();
 		boolean dirty = false;
+		List<String> changes = new ArrayList<>();
 
 		if (request.profileImageKey() != null) {
 			String pk = request.profileImageKey();
 			if (pk.isEmpty()) {
 				account.setProfileImageKey(null);
 				dirty = true;
+				changes.add("profile_image=cleared");
 			} else {
 				assertValidUserUploadKey(pk, usernameBefore);
 				account.setProfileImageKey(normalizeUploadKey(pk));
 				dirty = true;
+				changes.add("profile_image=set");
 			}
 		}
 
@@ -104,10 +112,12 @@ public class AccountController {
 			usernamePolicy.validateProposedUsername(nu, account.getUsername());
 			if (!nu.equals(account.getUsername())) {
 				if (accountRepository.existsByUsername(nu)) {
+					log.warn("PROFILE_UPDATE_FAILED user={} reason=username_taken requested={}", usernameBefore, nu);
 					throw new ResponseStatusException(HttpStatus.CONFLICT, "That username is already taken");
 				}
 				account.setUsername(nu);
 				dirty = true;
+				changes.add("username=" + usernameBefore + "->" + nu);
 			}
 		}
 
@@ -116,6 +126,7 @@ public class AccountController {
 		}
 
 		accountRepository.save(account);
+		log.info("PROFILE_UPDATE user={} changes={}", account.getUsername(), changes);
 		String accessToken = fishListJwtService.createAccessToken(account.getUsername());
 		return ResponseEntity.ok(new AccountUpdateResponse(toResponse(account), accessToken, "Bearer"));
 	}
@@ -237,6 +248,10 @@ public class AccountController {
 			Account first = current.getId().equals(minId) ? current : target;
 			Account second = current.getId().equals(minId) ? target : current;
 			friendshipRepository.save(new Friendship(null, first, second, Instant.now().toString()));
+			log.info("FRIEND_ADDED   actor={} target={}", current.getUsername(), target.getUsername());
+		} else {
+			log.info("FRIEND_NOOP    actor={} target={} reason=already_friends", current.getUsername(),
+					target.getUsername());
 		}
 		return toResponse(target);
 	}
@@ -256,8 +271,17 @@ public class AccountController {
 		}
 		Long minId = Math.min(current.getId(), id);
 		Long maxId = Math.max(current.getId(), id);
+		boolean[] removed = { false };
 		friendshipRepository.findByAccountA_IdAndAccountB_Id(minId, maxId)
-				.ifPresent(friendshipRepository::delete);
+				.ifPresent(link -> {
+					friendshipRepository.delete(link);
+					removed[0] = true;
+				});
+		if (removed[0]) {
+			log.info("FRIEND_REMOVED actor={} targetId={}", current.getUsername(), id);
+		} else {
+			log.info("FRIEND_NOOP    actor={} targetId={} reason=not_friends", current.getUsername(), id);
+		}
 		return ResponseEntity.noContent().build();
 	}
 

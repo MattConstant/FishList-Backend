@@ -1,5 +1,7 @@
 package ca.consmatt.controllers;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -34,6 +36,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 @RequiredArgsConstructor
 public class AuthController {
 
+	private static final Logger log = LoggerFactory.getLogger(AuthController.class);
+
 	private final GoogleIdTokenVerifierService googleIdTokenVerifierService;
 	private final AccountRepository accountRepository;
 	private final AdminProperties adminProperties;
@@ -49,18 +53,25 @@ public class AuthController {
 	public ResponseEntity<GoogleAuthResponse> login(@Valid @RequestBody PasswordLoginRequest request) {
 		String u = request.username().trim();
 		if (u.isEmpty()) {
+			log.warn("LOGIN_FAILED  user=<empty> reason=missing_username");
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Username required");
 		}
-		Account account = accountRepository.findByUsername(u)
-				.orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid username or password"));
+		Account account = accountRepository.findByUsername(u).orElse(null);
+		if (account == null) {
+			log.warn("LOGIN_FAILED  user={} reason=unknown_user", u);
+			throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid username or password");
+		}
 		String hash = account.getPassword();
 		if (hash == null || hash.isBlank()) {
+			log.warn("LOGIN_FAILED  user={} reason=no_password_set", u);
 			throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid username or password");
 		}
 		if (!passwordEncoder.matches(request.password(), hash)) {
+			log.warn("LOGIN_FAILED  user={} reason=bad_password", u);
 			throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid username or password");
 		}
 		String accessToken = fishListJwtService.createAccessToken(account.getUsername());
+		log.info("LOGIN_SUCCESS user={} method=password role={}", account.getUsername(), account.getRole());
 		return ResponseEntity.ok(new GoogleAuthResponse(accessToken, "Bearer",
 				new AccountResponse(account.getId(), account.getUsername(), account.getProfileImageKey())));
 	}
@@ -72,24 +83,29 @@ public class AuthController {
 	public ResponseEntity<GoogleAuthResponse> register(@Valid @RequestBody RegisterRequest request) {
 		String u = request.username().trim();
 		if (u.length() < 2 || u.length() > 100) {
+			log.warn("REGISTER_FAILED user={} reason=length", u);
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
 					"Username must be between 2 and 100 characters");
 		}
 		if (!u.matches("^[a-zA-Z0-9_]{2,100}$")) {
+			log.warn("REGISTER_FAILED user={} reason=invalid_chars", u);
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
 					"Username may only contain letters, numbers, and underscores (2–100 characters)");
 		}
 		usernamePolicy.validateProposedUsername(u, null);
 		if (accountRepository.existsByUsername(u)) {
+			log.warn("REGISTER_FAILED user={} reason=already_taken", u);
 			throw new ResponseStatusException(HttpStatus.CONFLICT, "That username is already taken");
 		}
 		String hash = passwordEncoder.encode(request.password());
 		try {
 			Account saved = accountRepository.save(new Account(null, u, null, hash, AccountRole.USER, null));
 			String accessToken = fishListJwtService.createAccessToken(saved.getUsername());
+			log.info("REGISTERED    user={} id={} role={}", saved.getUsername(), saved.getId(), saved.getRole());
 			return ResponseEntity.ok(new GoogleAuthResponse(accessToken, "Bearer",
 					new AccountResponse(saved.getId(), saved.getUsername(), saved.getProfileImageKey())));
 		} catch (DataIntegrityViolationException e) {
+			log.warn("REGISTER_FAILED user={} reason=race_already_taken", u);
 			throw new ResponseStatusException(HttpStatus.CONFLICT, "That username is already taken");
 		}
 	}
@@ -97,17 +113,27 @@ public class AuthController {
 	@PostMapping("/google")
 	public ResponseEntity<GoogleAuthResponse> google(@Valid @RequestBody GoogleAuthRequest request) {
 		if (googleIdTokenVerifierService.credentialsNotConfigured()) {
+			log.warn("LOGIN_FAILED  method=google reason=not_configured");
 			throw new ResponseStatusException(
 					HttpStatus.SERVICE_UNAVAILABLE,
 					"Google OAuth is not configured (set GOOGLE_CLIENT_ID / app.oauth2.google.client-id)");
 		}
 		GoogleIdTokenPayload payload = googleIdTokenVerifierService.verify(request.credential())
-				.orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid Google credential"));
+				.orElseThrow(() -> {
+					log.warn("LOGIN_FAILED  method=google reason=invalid_credential");
+					return new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid Google credential");
+				});
 
+		boolean[] createdHolder = { false };
 		Account account = accountRepository.findByGoogleSub(payload.sub())
-				.orElseGet(() -> createAccountFromGoogle(payload));
+				.orElseGet(() -> {
+					createdHolder[0] = true;
+					return createAccountFromGoogle(payload);
+				});
 
 		String accessToken = fishListJwtService.createAccessToken(account.getUsername());
+		log.info("LOGIN_SUCCESS user={} method=google new_account={} role={}", account.getUsername(),
+				createdHolder[0], account.getRole());
 		return ResponseEntity.ok(new GoogleAuthResponse(accessToken, "Bearer",
 				new AccountResponse(account.getId(), account.getUsername(), account.getProfileImageKey())));
 	}
