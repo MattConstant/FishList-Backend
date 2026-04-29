@@ -30,12 +30,15 @@ import ca.consmatt.beans.Location;
 import ca.consmatt.beans.PostVisibility;
 import ca.consmatt.dto.AccountResponse;
 import ca.consmatt.dto.AccountUpdateResponse;
+import ca.consmatt.dto.AddFriendResponse;
 import ca.consmatt.dto.UpdateProfileRequest;
+import ca.consmatt.dto.UnlockedAchievementSummary;
 import ca.consmatt.repositories.AccountRepository;
 import ca.consmatt.policy.UsernamePolicy;
 import ca.consmatt.repositories.FriendshipRepository;
 import ca.consmatt.repositories.LocationRepository;
 import ca.consmatt.security.FishListJwtService;
+import ca.consmatt.service.AchievementService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
@@ -56,6 +59,7 @@ public class AccountController {
 	private final FriendshipRepository friendshipRepository;
 	private final FishListJwtService fishListJwtService;
 	private final UsernamePolicy usernamePolicy;
+	private final AchievementService achievementService;
 
 	/**
 	 * Returns the authenticated user's public profile.
@@ -233,7 +237,7 @@ public class AccountController {
 	 * @return target account summary
 	 */
 	@PostMapping("/{id:\\d+}/friends")
-	public AccountResponse addFriend(@PathVariable Long id, Authentication authentication) {
+	public AddFriendResponse addFriend(@PathVariable Long id, Authentication authentication) {
 		Account current = requireAccount(authentication);
 		Account target = accountRepository.findById(id)
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
@@ -244,16 +248,20 @@ public class AccountController {
 		Long minId = Math.min(current.getId(), target.getId());
 		Long maxId = Math.max(current.getId(), target.getId());
 		boolean exists = friendshipRepository.findByAccountA_IdAndAccountB_Id(minId, maxId).isPresent();
+		List<UnlockedAchievementSummary> unlocked = List.of();
 		if (!exists) {
 			Account first = current.getId().equals(minId) ? current : target;
 			Account second = current.getId().equals(minId) ? target : current;
 			friendshipRepository.save(new Friendship(null, first, second, Instant.now().toString()));
 			log.info("FRIEND_ADDED   actor={} target={}", current.getUsername(), target.getUsername());
+			unlocked = achievementService.evaluateAll(current);
+			// Target gains a friend too — re-evaluate so they see FIRST_FRIEND on their next refresh.
+			achievementService.evaluateAll(target);
 		} else {
 			log.info("FRIEND_NOOP    actor={} target={} reason=already_friends", current.getUsername(),
 					target.getUsername());
 		}
-		return toResponse(target);
+		return new AddFriendResponse(toResponse(target), unlocked);
 	}
 
 	/**

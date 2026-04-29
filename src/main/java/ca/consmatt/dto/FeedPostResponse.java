@@ -1,5 +1,6 @@
 package ca.consmatt.dto;
 
+import ca.consmatt.beans.FishingType;
 import ca.consmatt.beans.PostVisibility;
 
 /**
@@ -23,5 +24,6 @@ public record FeedPostResponse(
 		String imageUrl,
 		String imageUrls,
 		String fishDetailsJson,
+		FishingType fishingType,
 		PostVisibility visibility) {
 }

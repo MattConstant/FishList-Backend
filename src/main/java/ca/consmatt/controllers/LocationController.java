@@ -34,6 +34,7 @@ import ca.consmatt.beans.CatchComment;
 import ca.consmatt.beans.CatchLike;
 import ca.consmatt.beans.Location;
 import ca.consmatt.dto.AddCatchRequest;
+import ca.consmatt.dto.AddCatchResponse;
 import ca.consmatt.dto.FishEntryRequest;
 import ca.consmatt.dto.CreateLocationRequest;
 import ca.consmatt.dto.CatchCommentResponse;
@@ -42,6 +43,7 @@ import ca.consmatt.dto.CatchLikeResponse;
 import ca.consmatt.dto.CreateCatchCommentRequest;
 import ca.consmatt.dto.FeedPostResponse;
 import ca.consmatt.dto.LocationDetailResponse;
+import ca.consmatt.dto.UnlockedAchievementSummary;
 import ca.consmatt.beans.PostVisibility;
 import ca.consmatt.repositories.AccountRepository;
 import ca.consmatt.repositories.CatchCommentRepository;
@@ -49,6 +51,7 @@ import ca.consmatt.repositories.CatchRepository;
 import ca.consmatt.repositories.CatchLikeRepository;
 import ca.consmatt.repositories.FriendshipRepository;
 import ca.consmatt.repositories.LocationRepository;
+import ca.consmatt.service.AchievementService;
 import ca.consmatt.storage.ImageStorageService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -77,6 +80,7 @@ public class LocationController {
 	private final CatchCommentRepository catchCommentRepo;
 	private final FriendshipRepository friendshipRepository;
 	private final ObjectProvider<ImageStorageService> imageStorageService;
+	private final AchievementService achievementService;
 
 	/**
 	 * Lists all locations (summary rows include {@code accountId}).
@@ -178,7 +182,7 @@ public class LocationController {
 	 * @return 201 with saved entity, 404/403 as appropriate
 	 */
 	@PostMapping("/{id}/catches")
-	public ResponseEntity<Catch> addCatch(@PathVariable Long id, @Valid @RequestBody AddCatchRequest request,
+	public ResponseEntity<AddCatchResponse> addCatch(@PathVariable Long id, @Valid @RequestBody AddCatchRequest request,
 			Authentication authentication) {
 		Account account = requireAccount(authentication);
 		Location location = locationRepo.findById(id)
@@ -225,11 +229,13 @@ public class LocationController {
 				.imageUrl(imageUrls.isEmpty() ? null : imageUrls.get(0))
 				.imageUrlsRaw(String.join("\n", imageUrls))
 				.description(request.description())
+				.fishingType(request.fishingType())
 				.build();
 		Catch saved = catchRepo.save(catchEntity);
 		log.info("CATCH_ADDED      user={} location={} id={} species=\"{}\" qty={} photos={}", account.getUsername(),
 				location.getId(), saved.getId(), speciesOut, quantityOut, imageUrls.size());
-		return ResponseEntity.status(HttpStatus.CREATED).body(saved);
+		List<UnlockedAchievementSummary> unlocked = achievementService.evaluateAll(account);
+		return ResponseEntity.status(HttpStatus.CREATED).body(new AddCatchResponse(saved, unlocked));
 	}
 
 	private List<FishEntryRequest> resolveFishLines(AddCatchRequest request) {
@@ -294,7 +300,8 @@ public class LocationController {
 				Instant.now().toString()));
 		log.info("COMMENT_ADDED    user={} catch={} commentId={}", account.getUsername(), catchEntity.getId(),
 				saved.getId());
-		return ResponseEntity.status(HttpStatus.CREATED).body(toCatchCommentResponse(saved, account));
+		List<UnlockedAchievementSummary> unlocked = achievementService.evaluateAll(account);
+		return ResponseEntity.status(HttpStatus.CREATED).body(toCatchCommentResponseWithUnlocks(saved, account, unlocked));
 	}
 
 	/**
@@ -345,13 +352,31 @@ public class LocationController {
 		Catch catchEntity = requireVisibleCatchInLocation(id, catchId, account);
 
 		boolean alreadyLiked = catchLikeRepo.existsByCatchRecord_IdAndAccount_Id(catchEntity.getId(), account.getId());
+		List<UnlockedAchievementSummary> unlockedForLiker = List.of();
+		List<UnlockedAchievementSummary> unlockedForOwner = List.of();
 		if (!alreadyLiked) {
 			catchLikeRepo.save(new CatchLike(null, account, catchEntity));
 			log.info("LIKE             user={} catch={}", account.getUsername(), catchEntity.getId());
+			// FIRST_LIKE_GIVEN tips on the actor; POPULAR_CATCH tips on the catch owner.
+			unlockedForLiker = achievementService.evaluateAll(account);
+			Account owner = catchEntity.getLocation() != null ? catchEntity.getLocation().getAccount() : null;
+			if (owner != null && !owner.getId().equals(account.getId())) {
+				unlockedForOwner = achievementService.evaluateAll(owner);
+			}
 		}
 
 		long likesCount = catchLikeRepo.countByCatchRecord_Id(catchEntity.getId());
-		return new CatchLikeResponse(catchEntity.getId(), likesCount, true);
+		List<UnlockedAchievementSummary> combinedForLiker = unlockedForLiker;
+		// Owner unlocks aren't returned to the liker (they belong to a different user); the owner
+		// will see them next time their /api/achievements/me payload refreshes.
+		if (!unlockedForOwner.isEmpty()) {
+			log.info("ACHIEVEMENT_OWNER_TRIGGERED owner={} count={}",
+					catchEntity.getLocation() != null && catchEntity.getLocation().getAccount() != null
+							? catchEntity.getLocation().getAccount().getUsername()
+							: "unknown",
+					unlockedForOwner.size());
+		}
+		return new CatchLikeResponse(catchEntity.getId(), likesCount, true, combinedForLiker);
 	}
 
 	/**
@@ -495,6 +520,11 @@ public class LocationController {
 	}
 
 	private CatchCommentResponse toCatchCommentResponse(CatchComment comment, Account currentAccount) {
+		return toCatchCommentResponseWithUnlocks(comment, currentAccount, List.of());
+	}
+
+	private CatchCommentResponse toCatchCommentResponseWithUnlocks(CatchComment comment, Account currentAccount,
+			List<UnlockedAchievementSummary> unlockedAchievements) {
 		Long accountId = comment.getAccount() != null ? comment.getAccount().getId() : null;
 		String username = comment.getAccount() != null ? comment.getAccount().getUsername() : "unknown";
 		boolean ownedByMe = accountId != null
@@ -507,7 +537,8 @@ public class LocationController {
 				username,
 				comment.getMessage(),
 				comment.getCreatedAt(),
-				ownedByMe);
+				ownedByMe,
+				unlockedAchievements == null ? List.of() : unlockedAchievements);
 	}
 
 	/**

@@ -43,8 +43,12 @@ public class Account {
 	@JsonIgnore
 	private String password;
 
+	/**
+	 * {@code columnDefinition} keeps Hibernate from auto-adding a {@code CHECK (role in (...))}
+	 * constraint that would block future {@link AccountRole} additions.
+	 */
 	@Enumerated(EnumType.STRING)
-	@Column(nullable = false)
+	@Column(nullable = false, columnDefinition = "varchar(32) not null")
 	private AccountRole role = AccountRole.USER;
 
 	/**

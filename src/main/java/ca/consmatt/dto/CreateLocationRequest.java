@@ -3,6 +3,7 @@ package ca.consmatt.dto;
 import ca.consmatt.beans.Account;
 import ca.consmatt.beans.Location;
 import ca.consmatt.beans.PostVisibility;
+import ca.consmatt.beans.WaterType;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
@@ -25,7 +26,8 @@ public record CreateLocationRequest(
 		String timeStamp,
 		@Size(max = 1000, message = "details must be at most 1000 characters")
 		String details,
-		PostVisibility visibility) {
+		PostVisibility visibility,
+		WaterType waterType) {
 
 	/** Builds a new {@link Location} with the given owner (id assigned on save). */
 	public Location toNewLocation(Account account) {
@@ -36,6 +38,7 @@ public record CreateLocationRequest(
 		location.setTimeStamp(timeStamp);
 		location.setDetails(details);
 		location.setVisibility(visibility != null ? visibility : PostVisibility.PUBLIC);
+		location.setWaterType(waterType);
 		location.setAccount(account);
 		return location;
 	}
@@ -49,6 +52,9 @@ public record CreateLocationRequest(
 		target.setDetails(details);
 		if (visibility != null) {
 			target.setVisibility(visibility);
+		}
+		if (waterType != null) {
+			target.setWaterType(waterType);
 		}
 	}
 }

@@ -23,6 +23,7 @@ import ca.consmatt.beans.Location;
 import ca.consmatt.dto.AdminAccountRowResponse;
 import ca.consmatt.dto.AdminMeResponse;
 import ca.consmatt.dto.AdminSummaryResponse;
+import ca.consmatt.repositories.AccountAchievementRepository;
 import ca.consmatt.repositories.AccountRepository;
 import ca.consmatt.repositories.CatchCommentRepository;
 import ca.consmatt.repositories.CatchLikeRepository;
@@ -56,6 +57,7 @@ public class AdminController {
 	private final CatchCommentRepository catchCommentRepository;
 	private final CatchLikeRepository catchLikeRepository;
 	private final FriendshipRepository friendshipRepository;
+	private final AccountAchievementRepository accountAchievementRepository;
 
 	@GetMapping("/me")
 	public AdminMeResponse me(Authentication authentication) {
@@ -123,6 +125,7 @@ public class AdminController {
 
 		catchCommentRepository.deleteByAccount_Id(target.getId());
 		catchLikeRepository.deleteByAccount_Id(target.getId());
+		accountAchievementRepository.deleteByAccount_Id(target.getId());
 		friendshipRepository.deleteByAccountA_IdOrAccountB_Id(target.getId(), target.getId());
 		accountRepository.deleteById(target.getId());
 		log.warn("ADMIN_DELETE_ACCOUNT_SUCCESS admin={} target={}", admin.getUsername(), target.getUsername());

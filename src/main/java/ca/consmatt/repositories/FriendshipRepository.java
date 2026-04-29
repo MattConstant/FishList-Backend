@@ -16,5 +16,7 @@ public interface FriendshipRepository extends JpaRepository<Friendship, Long> {
 
 	List<Friendship> findByAccountA_IdOrAccountB_Id(Long accountAId, Long accountBId);
 
+	long countByAccountA_IdOrAccountB_Id(Long accountAId, Long accountBId);
+
 	void deleteByAccountA_IdOrAccountB_Id(Long accountAId, Long accountBId);
 }

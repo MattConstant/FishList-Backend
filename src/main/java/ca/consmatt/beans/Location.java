@@ -62,10 +62,22 @@ public class Location {
 	@JsonIgnore
 	private Account account;
 
-	/** Null in older rows is treated as {@link PostVisibility#PUBLIC} in queries. */
+	/**
+	 * Null in older rows is treated as {@link PostVisibility#PUBLIC} in queries.
+	 * {@code columnDefinition} keeps Hibernate from auto-adding a {@code CHECK} that would block
+	 * future enum additions.
+	 */
 	@Enumerated(EnumType.STRING)
-	@Column(name = "visibility", length = 16)
+	@Column(name = "visibility", length = 16, columnDefinition = "varchar(16)")
 	private PostVisibility visibility;
+
+	/**
+	 * Body of water (lake, river, ocean, etc.); {@code null} when not specified.
+	 * Uses {@code columnDefinition} for the same reason as {@code visibility}.
+	 */
+	@Enumerated(EnumType.STRING)
+	@Column(name = "water_type", length = 32, columnDefinition = "varchar(32)")
+	private WaterType waterType;
 
 	/**
 	 * @return owning account id for API responses, or {@code null} if not loaded

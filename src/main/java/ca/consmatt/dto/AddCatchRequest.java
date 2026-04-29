@@ -2,6 +2,7 @@ package ca.consmatt.dto;
 
 import java.util.List;
 
+import ca.consmatt.beans.FishingType;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
@@ -17,6 +18,7 @@ import jakarta.validation.constraints.Size;
  * @param imageUrl optional photo URL
  * @param imageUrls optional list of up to 4 photo URLs/keys
  * @param description optional longer text
+ * @param fishingType optional technique used (fly fishing, trolling, etc.)
  * @param fish when non-empty, per-fish details for one post; multiple entries stored in
  *        {@code fishDetailsJson} on the catch
  */
@@ -29,5 +31,6 @@ public record AddCatchRequest(
 		String imageUrl,
 		@Size(max = 4) List<String> imageUrls,
 		String description,
+		FishingType fishingType,
 		@Size(max = 30) List<@Valid FishEntryRequest> fish) {
 }

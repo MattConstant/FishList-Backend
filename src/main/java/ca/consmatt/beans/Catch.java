@@ -12,6 +12,8 @@ import ca.consmatt.dto.FishDetailResponse;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -65,6 +67,15 @@ public class Catch {
 
 	@Column(length = 1000)
 	private String description;
+
+	/**
+	 * Fishing technique (fly, spin, trolling, etc.); {@code null} when the user didn't specify.
+	 * {@code columnDefinition} keeps Hibernate from auto-adding a {@code CHECK} that would block
+	 * future enum additions.
+	 */
+	@Enumerated(EnumType.STRING)
+	@Column(name = "fishing_type", length = 32, columnDefinition = "varchar(32)")
+	private FishingType fishingType;
 
 	/** JSON array of per-fish lines when one post lists multiple fish; {@code null} for legacy rows. */
 	@Column(name = "fish_details_json", length = 8192)
