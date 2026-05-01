@@ -2,6 +2,10 @@ package ca.consmatt.controllers;
 
 import java.util.List;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,6 +24,7 @@ import org.springframework.web.server.ResponseStatusException;
 import ca.consmatt.beans.Account;
 import ca.consmatt.beans.AccountRole;
 import ca.consmatt.beans.Location;
+import ca.consmatt.dto.AdminAccountPageResponse;
 import ca.consmatt.dto.AdminAccountRowResponse;
 import ca.consmatt.dto.AdminMeResponse;
 import ca.consmatt.dto.AdminSummaryResponse;
@@ -78,17 +83,18 @@ public class AdminController {
 	}
 
 	@GetMapping("/accounts")
-	public List<AdminAccountRowResponse> listAccounts(
+	public AdminAccountPageResponse listAccounts(
 			@RequestParam(name = "query", defaultValue = "") @Size(max = 100, message = "query length must be <= 100") String query,
-			@RequestParam(name = "limit", defaultValue = "50") @Min(value = 1, message = "limit must be >= 1") @Max(value = 100, message = "limit must be <= 100") int limit,
+			@RequestParam(name = "page", defaultValue = "0") @Min(value = 0, message = "page must be >= 0") int page,
+			@RequestParam(name = "size", defaultValue = "25") @Min(value = 1, message = "size must be >= 1") @Max(value = 100, message = "size must be <= 100") int size,
 			Authentication authentication) {
 		requireAdmin(authentication);
 		String normalized = query == null ? "" : query.trim();
-		List<Account> candidates = normalized.isBlank()
-				? accountRepository.findTop200ByOrderByUsernameAsc()
-				: accountRepository.findTop200ByUsernameContainingIgnoreCaseOrderByUsernameAsc(normalized);
-		return candidates.stream()
-				.limit(limit)
+		PageRequest pageable = PageRequest.of(page, size, Sort.by("username"));
+		Page<Account> accountPage = normalized.isBlank()
+				? accountRepository.findAllByOrderByUsernameAsc(pageable)
+				: accountRepository.findByUsernameContainingIgnoreCaseOrderByUsernameAsc(normalized, pageable);
+		List<AdminAccountRowResponse> content = accountPage.getContent().stream()
 				.map(a -> new AdminAccountRowResponse(
 						a.getId(),
 						a.getUsername(),
@@ -97,6 +103,12 @@ public class AdminController {
 						catchCommentRepository.countByAccount_Id(a.getId()),
 						catchLikeRepository.countByAccount_Id(a.getId())))
 				.toList();
+		return new AdminAccountPageResponse(
+				content,
+				accountPage.getTotalElements(),
+				accountPage.getTotalPages(),
+				accountPage.getNumber(),
+				accountPage.getSize());
 	}
 
 	@DeleteMapping("/accounts/{id}")

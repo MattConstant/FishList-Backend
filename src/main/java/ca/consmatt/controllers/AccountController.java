@@ -31,6 +31,8 @@ import ca.consmatt.beans.PostVisibility;
 import ca.consmatt.dto.AccountResponse;
 import ca.consmatt.dto.AccountUpdateResponse;
 import ca.consmatt.dto.AddFriendResponse;
+import ca.consmatt.dto.CreateMapFavoriteSpotRequest;
+import ca.consmatt.dto.MapFavoriteSpotResponse;
 import ca.consmatt.dto.UpdateProfileRequest;
 import ca.consmatt.dto.UnlockedAchievementSummary;
 import ca.consmatt.repositories.AccountRepository;
@@ -39,6 +41,7 @@ import ca.consmatt.repositories.FriendshipRepository;
 import ca.consmatt.repositories.LocationRepository;
 import ca.consmatt.security.FishListJwtService;
 import ca.consmatt.service.AchievementService;
+import ca.consmatt.service.MapFavoriteSpotService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
@@ -57,6 +60,7 @@ public class AccountController {
 	private final AccountRepository accountRepository;
 	private final LocationRepository locationRepository;
 	private final FriendshipRepository friendshipRepository;
+	private final MapFavoriteSpotService mapFavoriteSpotService;
 	private final FishListJwtService fishListJwtService;
 	private final UsernamePolicy usernamePolicy;
 	private final AchievementService achievementService;
@@ -290,6 +294,38 @@ public class AccountController {
 		} else {
 			log.info("FRIEND_NOOP    actor={} targetId={} reason=not_friends", current.getUsername(), id);
 		}
+		return ResponseEntity.noContent().build();
+	}
+
+	/**
+	 * Saved map bookmarks for the authenticated user (snapped pins from the stocking map UI).
+	 */
+	@GetMapping("/me/map-favorites")
+	public List<MapFavoriteSpotResponse> listMyMapFavorites(Authentication authentication) {
+		Account current = requireAccount(authentication);
+		return mapFavoriteSpotService.listFor(current);
+	}
+
+	/**
+	 * Adds or refreshes one bookmark (coordinates snapped to five decimals; duplicate coordinates
+	 * merge into one row per user).
+	 */
+	@PostMapping(path = "/me/map-favorites", consumes = MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<MapFavoriteSpotResponse> addMyMapFavorite(
+			@Valid @RequestBody CreateMapFavoriteSpotRequest body,
+			Authentication authentication) {
+		Account current = requireAccount(authentication);
+		MapFavoriteSpotResponse saved = mapFavoriteSpotService.create(current, body);
+		return ResponseEntity.ok(saved);
+	}
+
+	/**
+	 * Deletes one bookmark by id (must belong to the current user).
+	 */
+	@DeleteMapping("/me/map-favorites/{id:\\d+}")
+	public ResponseEntity<Void> removeMyMapFavorite(@PathVariable Long id, Authentication authentication) {
+		Account current = requireAccount(authentication);
+		mapFavoriteSpotService.deleteOwned(current, id);
 		return ResponseEntity.noContent().build();
 	}
 

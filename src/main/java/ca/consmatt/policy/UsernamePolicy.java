@@ -10,13 +10,16 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
 
+import ca.consmatt.beans.AccountRole;
 import ca.consmatt.config.ContentPolicyProperties;
+import ca.consmatt.repositories.AccountRepository;
 import ca.consmatt.security.AdminProperties;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 
 /**
- * Validates proposed usernames: reserved admin names and banned language (substring checks).
+ * Validates proposed usernames: reserved names (configured admins, extra reserved list, and any
+ * existing {@link AccountRole#ADMIN} username) plus banned language (substring checks).
  * Keep default banned fragments in sync with {@code fishlist-frontend/src/lib/username-policy.ts}.
  */
 @Component
@@ -32,6 +35,7 @@ public class UsernamePolicy {
 			"dyke", "homo", "jizz", "puss", "scum", "twat", "wank");
 
 	private final AdminProperties adminProperties;
+	private final AccountRepository accountRepository;
 	private final ContentPolicyProperties contentPolicyProperties;
 
 	private List<String> mergedBannedLowercase = List.of();
@@ -84,17 +88,34 @@ public class UsernamePolicy {
 		if (candidate == null || candidate.isBlank()) {
 			return false;
 		}
-		if (adminProperties.isAdminUsername(candidate)) {
+		if (adminProperties.isUsernameReservedFromConfig(candidate)) {
+			return false;
+		}
+		if (usernameHeldByDifferentAdmin(candidate, null)) {
 			return false;
 		}
 		return !containsBannedSubstring(candidate);
 	}
 
 	private boolean isReservedAdminName(String proposed, String currentUsername) {
-		if (!adminProperties.isAdminUsername(proposed)) {
+		if (currentUsername != null && proposed.equalsIgnoreCase(currentUsername)) {
 			return false;
 		}
-		return currentUsername == null || !proposed.equalsIgnoreCase(currentUsername);
+		if (adminProperties.isUsernameReservedFromConfig(proposed)) {
+			return true;
+		}
+		return usernameHeldByDifferentAdmin(proposed, currentUsername);
+	}
+
+	/**
+	 * True if some other account already uses {@code proposed} with role ADMIN (case-insensitive
+	 * match on username).
+	 */
+	private boolean usernameHeldByDifferentAdmin(String proposed, String currentUsername) {
+		return accountRepository.findByUsernameIgnoreCase(proposed)
+				.filter(acc -> acc.getRole() == AccountRole.ADMIN)
+				.filter(acc -> currentUsername == null || !acc.getUsername().equalsIgnoreCase(currentUsername))
+				.isPresent();
 	}
 
 	private boolean containsBannedSubstring(String username) {
