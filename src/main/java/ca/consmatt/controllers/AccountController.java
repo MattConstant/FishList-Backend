@@ -259,7 +259,7 @@ public class AccountController {
 			friendshipRepository.save(new Friendship(null, first, second, Instant.now().toString()));
 			log.info("FRIEND_ADDED   actor={} target={}", current.getUsername(), target.getUsername());
 			unlocked = achievementService.evaluateAll(current);
-			// Target gains a friend too — re-evaluate so they see FIRST_FRIEND on their next refresh.
+			// Target gains a friend too - re-evaluate so they see FIRST_FRIEND on their next refresh.
 			achievementService.evaluateAll(target);
 		} else {
 			log.info("FRIEND_NOOP    actor={} target={} reason=already_friends", current.getUsername(),

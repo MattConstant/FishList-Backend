@@ -62,7 +62,7 @@ public class AchievementService {
 
 	private static final Logger log = LoggerFactory.getLogger(AchievementService.class);
 
-	// Trophy thresholds — rounded to clean imperial values (the UI reports both metric and
+	// Trophy thresholds - rounded to clean imperial values (the UI reports both metric and
 	// imperial in descriptions, but the user-facing units are inches/lbs).
 	private static final double IN_TO_CM = 2.54;
 	private static final double LBS_TO_KG = 0.45359237;
@@ -191,7 +191,7 @@ public class AchievementService {
 					account.getUsername(), code, code.xp());
 			return true;
 		} catch (DataIntegrityViolationException e) {
-			// Concurrent request already inserted this code — treat as no-op.
+			// Concurrent request already inserted this code - treat as no-op.
 			return false;
 		}
 	}

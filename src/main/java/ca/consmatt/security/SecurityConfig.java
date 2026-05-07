@@ -67,7 +67,7 @@ public class SecurityConfig {
 						.anyRequest().authenticated())
 				.oauth2ResourceServer(oauth2 -> oauth2
 						.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)))
-				// Stateless JWT in Authorization — not cookie session auth; see class Javadoc.
+				// Stateless JWT in Authorization - not cookie session auth; see class Javadoc.
 				.csrf(csrf -> csrf.disable())
 				.headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()));
 		return http.build();
@@ -102,7 +102,7 @@ public class SecurityConfig {
 		List<String> patterns = corsProperties.getAllowedOriginPatterns();
 		if (patterns == null || patterns.isEmpty()) {
 			throw new IllegalStateException(
-					"app.cors.allowed-origin-patterns must be non-empty — set explicit origins (e.g. https://your-app.vercel.app)");
+					"app.cors.allowed-origin-patterns must be non-empty - set explicit origins (e.g. https://your-app.vercel.app)");
 		}
 		for (String pattern : patterns) {
 			if (pattern == null || pattern.isBlank()) {
@@ -110,7 +110,7 @@ public class SecurityConfig {
 			}
 			if ("*".equals(pattern.trim())) {
 				throw new IllegalStateException(
-						"app.cors.allowed-origin-patterns must not be '*' — list explicit origins (browsers would allow any site to read responses)");
+						"app.cors.allowed-origin-patterns must not be '*' - list explicit origins (browsers would allow any site to read responses)");
 			}
 		}
 		CorsConfiguration config = new CorsConfiguration();

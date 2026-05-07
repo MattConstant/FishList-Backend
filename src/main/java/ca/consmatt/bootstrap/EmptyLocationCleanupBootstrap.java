@@ -19,7 +19,7 @@ import lombok.RequiredArgsConstructor;
  * Locations only make sense as a container for catches. If catches were deleted before
  * we added auto-pruning to {@code LocationController.deleteCatch}, the empty location pin
  * was left behind on the user's profile. This sweep removes any zero-catch locations on startup
- * (idempotent — does nothing once the data is clean).
+ * (idempotent - does nothing once the data is clean).
  */
 @Component
 @RequiredArgsConstructor

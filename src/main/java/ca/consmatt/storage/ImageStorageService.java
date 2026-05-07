@@ -76,7 +76,7 @@ public class ImageStorageService {
 					.contentType(normalizedContentType)
 					.build();
 			s3Client.putObject(put, RequestBody.fromInputStream(in, size));
-			// Do not presign here — clients use GET /api/storage/images/download-url?key=… .
+			// Do not presign here - clients use GET /api/storage/images/download-url?key=… .
 			// Presign after PUT was an extra failure point after the object already existed in the bucket.
 			return new ImageUploadResponse(properties.getBucket(), objectKey, normalizedContentType, size, "");
 		} catch (Exception e) {

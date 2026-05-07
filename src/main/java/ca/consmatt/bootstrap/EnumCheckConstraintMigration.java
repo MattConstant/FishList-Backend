@@ -54,7 +54,7 @@ public class EnumCheckConstraintMigration implements CommandLineRunner {
 				try {
 					stmt.executeUpdate(sql);
 				} catch (SQLException ex) {
-					// Log and continue — a missing table just means that entity isn't on this DB yet.
+					// Log and continue - a missing table just means that entity isn't on this DB yet.
 					log.warn("ENUM_CHECK_DROP skipped {} (reason: {})", pair[1], ex.getMessage());
 				}
 			}

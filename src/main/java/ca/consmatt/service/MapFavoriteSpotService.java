@@ -83,7 +83,7 @@ public class MapFavoriteSpotService {
 		try {
 			ms = Instant.parse(row.getCreatedAt()).toEpochMilli();
 		} catch (RuntimeException ignored) {
-			/* fall back — invalid legacy row */
+			/* fall back - invalid legacy row */
 		}
 		return new MapFavoriteSpotResponse(
 				row.getId(),

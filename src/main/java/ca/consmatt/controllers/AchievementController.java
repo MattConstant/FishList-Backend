@@ -17,7 +17,7 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * Read-only achievements + role/XP API. Writes happen as side-effects of other mutations
- * (catches, likes, comments, friend adds) — there is no public endpoint to manually unlock.
+ * (catches, likes, comments, friend adds) - there is no public endpoint to manually unlock.
  */
 @RestController
 @RequestMapping("/api/achievements")

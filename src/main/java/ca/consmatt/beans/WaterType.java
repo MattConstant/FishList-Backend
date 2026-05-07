@@ -1,7 +1,7 @@
 package ca.consmatt.beans;
 
 /**
- * Body of water classification on a {@link Location}. {@code null} on a row means "not specified" —
+ * Body of water classification on a {@link Location}. {@code null} on a row means "not specified" -
  * legacy locations created before this column existed stay null and don't qualify for water-type
  * achievements.
  *

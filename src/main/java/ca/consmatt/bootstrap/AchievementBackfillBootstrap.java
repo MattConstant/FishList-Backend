@@ -12,7 +12,7 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * Awards retroactive achievements on startup for any existing user whose past activity now meets
- * the criteria. Idempotent — re-runs do nothing once every eligible row exists.
+ * the criteria. Idempotent - re-runs do nothing once every eligible row exists.
  *
  * Without this, users who registered before the achievements feature shipped would have to log a
  * new catch (or generate any qualifying event) to earn badges they had already objectively earned.

@@ -50,7 +50,7 @@ public class LakeFishingInsightService {
 		String stockingLines = buildStockingLines(req.stockingRows());
 
 		String system = """
-				You are a practical fishing guide for Ontario, Canada. The app shows MNRF stocking data for this waterbody — your job is TEXT ONLY: help anglers understand what they might catch and how to fish here.
+				You are a practical fishing guide for Ontario, Canada. The app shows MNRF stocking data for this waterbody - your job is TEXT ONLY: help anglers understand what they might catch and how to fish here.
 
 				Respond with STRICT JSON only (no markdown fences). Schema:
 				{
@@ -59,13 +59,13 @@ public class LakeFishingInsightService {
 
 				In the narrative, emphasize:
 				- The stocked species listed and what anglers typically target here (seasonal notes ok).
-				- Simple, practical tips: tackle ideas, depths/structure to try, bait/lure styles — stay general (no exact GPS or “fish here on the map”).
+				- Simple, practical tips: tackle ideas, depths/structure to try, bait/lure styles - stay general (no exact GPS or “fish here on the map”).
 				- Access, regulations, limits, and safety (ice/boat) as brief reminders.
 
 				Do NOT output coordinates, bearings, distances, or map pins. Do NOT invent stocking facts beyond what the user data suggests.""";
 
 		String user = "Waterbody: " + req.waterbody() + "\n"
-				+ "Approximate stocking reference (lat, lng) — for context only, do not give map directions: "
+				+ "Approximate stocking reference (lat, lng) - for context only, do not give map directions: "
 				+ String.format(Locale.US, "%.5f, %.5f", req.lat(), req.lng()) + "\n"
 				+ "MNRF district(s): " + String.join(", ", nullSafe(req.districts())) + "\n"
 				+ "Species in stocking data: " + String.join(", ", nullSafe(req.speciesStocked())) + "\n"

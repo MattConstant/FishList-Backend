@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -70,7 +71,7 @@ public class LocationController {
 
 	private static final Logger log = LoggerFactory.getLogger(LocationController.class);
 
-	/** Local mapper — avoids requiring a Spring {@code ObjectMapper} bean (some images exclude Jackson auto-config). */
+	/** Local mapper: avoids requiring a Spring {@code ObjectMapper} bean (some images exclude Jackson auto-config). */
 	private static final ObjectMapper FISH_DETAILS_JSON = new ObjectMapper();
 
 	private final LocationRepository locationRepo;
@@ -411,6 +412,7 @@ public class LocationController {
 	 * @return 204 on success, 404/403 otherwise
 	 */
 	@DeleteMapping("/{id}/catches/{catchId}")
+	@Transactional
 	public ResponseEntity<Void> deleteCatch(@PathVariable Long id, @PathVariable Long catchId,
 			Authentication authentication) {
 		Account account = requireAccount(authentication);
@@ -419,20 +421,21 @@ public class LocationController {
 		assertLocationOwnerOrAdmin(location, account);
 		Catch catchEntity = catchRepo.findByIdAndLocation_Id(catchId, id)
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Catch not found"));
-		for (String key : catchEntity.getImageUrlsList()) {
-			if (isBlobObjectKey(key)) {
-				imageStorageService.ifAvailable(svc -> {
-					try {
-						svc.deleteUploadedObject(key);
-					} catch (Exception ex) {
-						log.warn("DELETE_CATCH_STORAGE_FAILED key={} msg={}", key, ex.getMessage());
-					}
-				});
-			}
-		}
+
+		// Capture keys up-front so storage cleanup can happen after DB delete.
+		// This avoids the "photo deleted but post still present" failure mode if the DB delete throws.
+		List<String> imageKeys = catchEntity.getImageUrlsList()
+				.stream()
+				.map(s -> s == null ? "" : s.trim())
+				.filter(s -> !s.isEmpty())
+				.filter(LocationController::isBlobObjectKey)
+				.toList();
+
 		catchCommentRepo.deleteByCatchRecord_Id(catchEntity.getId());
 		catchLikeRepo.deleteByCatchRecord_Id(catchEntity.getId());
 		catchRepo.delete(catchEntity);
+		// Force constraint violations to surface before we start deleting bucket objects.
+		catchRepo.flush();
 		log.info("CATCH_DELETED    user={} location={} catchId={}", account.getUsername(), id, catchId);
 
 		// Locations only exist as a container for catches; if the last one is gone,
@@ -441,6 +444,19 @@ public class LocationController {
 			locationRepo.deleteById(id);
 			log.info("LOCATION_AUTO_DELETED user={} id={} reason=last_catch_removed",
 					account.getUsername(), id);
+		}
+
+		// Best-effort storage cleanup after DB is consistent.
+		if (!imageKeys.isEmpty()) {
+			imageStorageService.ifAvailable(svc -> {
+				for (String key : imageKeys) {
+					try {
+						svc.deleteUploadedObject(key);
+					} catch (Exception ex) {
+						log.warn("DELETE_CATCH_STORAGE_FAILED key={} msg={}", key, ex.getMessage());
+					}
+				}
+			});
 		}
 		return ResponseEntity.noContent().build();
 	}
