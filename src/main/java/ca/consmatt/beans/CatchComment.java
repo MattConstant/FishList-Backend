@@ -40,4 +40,9 @@ public class CatchComment {
 
 	@Column(nullable = false, length = 64)
 	private String createdAt;
+
+	/** Optional parent for a one-level reply thread (reply to a top-level comment only). */
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "parent_comment_id")
+	private CatchComment parent;
 }

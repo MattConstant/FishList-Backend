@@ -18,6 +18,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -25,16 +28,19 @@ import java.util.Locale;
 import java.util.stream.Collectors;
 
 import ca.consmatt.beans.Account;
+import ca.consmatt.beans.CatchComment;
 import ca.consmatt.beans.Friendship;
 import ca.consmatt.beans.Location;
 import ca.consmatt.beans.PostVisibility;
 import ca.consmatt.dto.AccountResponse;
 import ca.consmatt.dto.AccountUpdateResponse;
 import ca.consmatt.dto.AddFriendResponse;
+import ca.consmatt.dto.CommentReplyNotificationResponse;
 import ca.consmatt.dto.CreateMapFavoriteSpotRequest;
 import ca.consmatt.dto.MapFavoriteSpotResponse;
 import ca.consmatt.dto.UpdateProfileRequest;
 import ca.consmatt.dto.UnlockedAchievementSummary;
+import ca.consmatt.repositories.CatchCommentRepository;
 import ca.consmatt.repositories.AccountRepository;
 import ca.consmatt.policy.UsernamePolicy;
 import ca.consmatt.repositories.FriendshipRepository;
@@ -43,6 +49,8 @@ import ca.consmatt.security.FishListJwtService;
 import ca.consmatt.service.AchievementService;
 import ca.consmatt.service.MapFavoriteSpotService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 
@@ -58,6 +66,7 @@ public class AccountController {
 	private static final Logger log = LoggerFactory.getLogger(AccountController.class);
 
 	private final AccountRepository accountRepository;
+	private final CatchCommentRepository catchCommentRepository;
 	private final LocationRepository locationRepository;
 	private final FriendshipRepository friendshipRepository;
 	private final MapFavoriteSpotService mapFavoriteSpotService;
@@ -71,6 +80,28 @@ public class AccountController {
 	 * @param authentication current Spring Security principal
 	 * @return id and username, or 404 if missing
 	 */
+	/**
+	 * Recent replies to comments you wrote (any catch). Powers in-app notifications for comment threads.
+	 */
+	@GetMapping("/me/comment-replies")
+	public List<CommentReplyNotificationResponse> listCommentReplyNotifications(
+			@RequestParam(name = "limit", defaultValue = "25") @Min(1) @Max(50) int limit,
+			Authentication authentication) {
+		Account me = requireAccount(authentication);
+		Page<CatchComment> page = catchCommentRepository.findByParent_Account_IdAndAccount_IdNotOrderByIdDesc(
+				me.getId(), me.getId(), PageRequest.of(0, limit));
+		return page.getContent().stream().map(this::toReplyNotification).toList();
+	}
+
+	private CommentReplyNotificationResponse toReplyNotification(CatchComment c) {
+		String msg = c.getMessage() == null ? "" : c.getMessage();
+		String preview = msg.length() > 140 ? msg.substring(0, 137) + "..." : msg;
+		String username = c.getAccount() != null ? c.getAccount().getUsername() : "unknown";
+		long locId = c.getCatchRecord().getLocation().getId();
+		long catchId = c.getCatchRecord().getId();
+		return new CommentReplyNotificationResponse(c.getId(), locId, catchId, username, preview, c.getCreatedAt());
+	}
+
 	@GetMapping("/me")
 	public ResponseEntity<AccountResponse> getCurrentAccount(Authentication authentication) {
 		return accountRepository.findByUsername(authentication.getName())

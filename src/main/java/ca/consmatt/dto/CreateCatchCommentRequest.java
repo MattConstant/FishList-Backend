@@ -9,5 +9,7 @@ import jakarta.validation.constraints.Size;
 public record CreateCatchCommentRequest(
 		@NotBlank(message = "message is required")
 		@Size(max = 500, message = "message must be at most 500 characters")
-		String message) {
+		String message,
+		/** When set, this comment is a reply to that top-level comment (same catch). */
+		Long parentCommentId) {
 }

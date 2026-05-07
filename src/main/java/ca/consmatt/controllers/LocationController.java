@@ -260,16 +260,20 @@ public class LocationController {
 	public CatchCommentsPageResponse getCatchComments(@PathVariable Long id, @PathVariable Long catchId,
 			@RequestParam(name = "offset", defaultValue = "0") @Min(value = 0, message = "offset must be >= 0") int offset,
 			@RequestParam(name = "limit", defaultValue = "3") @Min(value = 1, message = "limit must be >= 1") @Max(value = 20, message = "limit must be <= 20") int limit,
+			@RequestParam(name = "order", defaultValue = "asc") String orderRaw,
 			Authentication authentication) {
 		Account account = requireAccount(authentication);
 		Catch catchEntity = requireVisibleCatchInLocation(id, catchId, account);
 		int normalizedOffset = Math.max(offset, 0);
 		int normalizedLimit = Math.min(Math.max(limit, 1), 20);
 		int requestWindow = normalizedOffset + normalizedLimit;
+		boolean desc = orderRaw != null && "desc".equalsIgnoreCase(orderRaw.trim());
 
-		Page<CatchComment> pageResult = catchCommentRepo.findByCatchRecord_IdOrderByIdDesc(
-				catchEntity.getId(),
-				PageRequest.of(0, requestWindow));
+		Page<CatchComment> pageResult = desc
+				? catchCommentRepo.findByCatchRecord_IdOrderByIdDesc(catchEntity.getId(),
+						PageRequest.of(0, requestWindow))
+				: catchCommentRepo.findByCatchRecord_IdOrderByIdAsc(catchEntity.getId(),
+						PageRequest.of(0, requestWindow));
 
 		List<CatchCommentResponse> comments = pageResult.getContent()
 				.stream()
@@ -293,12 +297,22 @@ public class LocationController {
 			@Valid @RequestBody CreateCatchCommentRequest request, Authentication authentication) {
 		Account account = requireAccount(authentication);
 		Catch catchEntity = requireVisibleCatchInLocation(id, catchId, account);
+		CatchComment parentComment = null;
+		if (request.parentCommentId() != null) {
+			parentComment = catchCommentRepo
+					.findByIdAndCatchRecord_Id(request.parentCommentId(), catchEntity.getId())
+					.orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Parent comment not found"));
+			if (parentComment.getParent() != null) {
+				throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot reply to a reply");
+			}
+		}
 		CatchComment saved = catchCommentRepo.save(new CatchComment(
 				null,
 				catchEntity,
 				account,
 				request.message().trim(),
-				Instant.now().toString()));
+				Instant.now().toString(),
+				parentComment));
 		log.info("COMMENT_ADDED    user={} catch={} commentId={}", account.getUsername(), catchEntity.getId(),
 				saved.getId());
 		List<UnlockedAchievementSummary> unlocked = achievementService.evaluateAll(account);
@@ -324,6 +338,7 @@ public class LocationController {
 			throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not allowed to delete this comment");
 		}
 
+		deleteChildCommentsRecursively(commentId);
 		catchCommentRepo.delete(comment);
 		log.info("COMMENT_DELETED  user={} catch={} commentId={}", account.getUsername(), catchEntity.getId(),
 				commentId);
@@ -546,6 +561,11 @@ public class LocationController {
 		boolean ownedByMe = accountId != null
 				&& currentAccount != null
 				&& accountId.equals(currentAccount.getId());
+		Long parentId = comment.getParent() != null ? comment.getParent().getId() : null;
+		String inReplyToUsername = null;
+		if (comment.getParent() != null && comment.getParent().getAccount() != null) {
+			inReplyToUsername = comment.getParent().getAccount().getUsername();
+		}
 		return new CatchCommentResponse(
 				comment.getId(),
 				comment.getCatchRecord() != null ? comment.getCatchRecord().getId() : null,
@@ -554,7 +574,17 @@ public class LocationController {
 				comment.getMessage(),
 				comment.getCreatedAt(),
 				ownedByMe,
-				unlockedAchievements == null ? List.of() : unlockedAchievements);
+				unlockedAchievements == null ? List.of() : unlockedAchievements,
+				parentId,
+				inReplyToUsername);
+	}
+
+	private void deleteChildCommentsRecursively(Long parentCommentId) {
+		List<CatchComment> replies = catchCommentRepo.findByParent_Id(parentCommentId);
+		for (CatchComment reply : replies) {
+			deleteChildCommentsRecursively(reply.getId());
+			catchCommentRepo.delete(reply);
+		}
 	}
 
 	/**

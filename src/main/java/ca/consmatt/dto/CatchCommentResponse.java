@@ -15,10 +15,18 @@ public record CatchCommentResponse(
 		String message,
 		String createdAt,
 		boolean ownedByMe,
-		List<UnlockedAchievementSummary> unlockedAchievements) {
+		List<UnlockedAchievementSummary> unlockedAchievements,
+		Long parentCommentId,
+		String inReplyToUsername) {
 
 	public CatchCommentResponse(Long id, Long catchId, Long accountId, String username,
 			String message, String createdAt, boolean ownedByMe) {
-		this(id, catchId, accountId, username, message, createdAt, ownedByMe, List.of());
+		this(id, catchId, accountId, username, message, createdAt, ownedByMe, List.of(), null, null);
+	}
+
+	public CatchCommentResponse(Long id, Long catchId, Long accountId, String username,
+			String message, String createdAt, boolean ownedByMe,
+			List<UnlockedAchievementSummary> unlockedAchievements) {
+		this(id, catchId, accountId, username, message, createdAt, ownedByMe, unlockedAchievements, null, null);
 	}
 }
