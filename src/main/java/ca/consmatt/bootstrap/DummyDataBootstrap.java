@@ -11,18 +11,16 @@ import org.springframework.transaction.annotation.Transactional;
 import ca.consmatt.beans.Account;
 import ca.consmatt.beans.AccountRole;
 import ca.consmatt.beans.Catch;
-import ca.consmatt.beans.Condition;
 import ca.consmatt.beans.Fish;
 import ca.consmatt.beans.Location;
 import ca.consmatt.repositories.AccountRepository;
 import ca.consmatt.repositories.CatchRepository;
-import ca.consmatt.repositories.ConditionRepository;
 import ca.consmatt.repositories.FishRepository;
 import ca.consmatt.repositories.LocationRepository;
 import lombok.RequiredArgsConstructor;
 
 /**
- * Seeds sample accounts, species, conditions, locations, and catches when the database has no
+ * Seeds sample accounts, species, locations, and catches when the database has no
  * accounts (typically first H2 in-memory startup). Disabled when {@code prod} is active so
  * deployed instances do not pay this cost at startup (or seed production DBs by accident).
  */
@@ -36,7 +34,6 @@ public class DummyDataBootstrap implements CommandLineRunner {
 	private final AccountRepository accountRepository;
 	private final LocationRepository locationRepository;
 	private final FishRepository fishRepository;
-	private final ConditionRepository conditionRepository;
 	private final CatchRepository catchRepository;
 	private final PasswordEncoder passwordEncoder;
 
@@ -83,29 +80,6 @@ public class DummyDataBootstrap implements CommandLineRunner {
 				.averageWeight(1.0)
 				.averageLength(30.0)
 				.description("Popular sport fish.")
-				.build());
-
-		conditionRepository.save(Condition.builder()
-				.weather("Sunny")
-				.temperature(18.0)
-				.windSpeed(12.0)
-				.timeOfDay("Morning")
-				.waterTemperature(16.0)
-				.waterClarity("Clear")
-				.pressure(1013.0)
-				.moonPhase("New")
-				.notes("Stable barometer.")
-				.build());
-		conditionRepository.save(Condition.builder()
-				.weather("Overcast")
-				.temperature(14.0)
-				.windSpeed(8.0)
-				.timeOfDay("Afternoon")
-				.waterTemperature(15.0)
-				.waterClarity("Stained")
-				.pressure(1008.0)
-				.moonPhase("Full")
-				.notes("Muddy water after rain.")
 				.build());
 
 		Location lake = new Location();

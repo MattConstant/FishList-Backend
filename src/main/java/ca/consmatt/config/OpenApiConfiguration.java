@@ -25,7 +25,7 @@ public class OpenApiConfiguration {
 		return new OpenAPI()
 				.info(new Info()
 						.title("FishList API")
-						.description("Fishing spot tracker: accounts, locations, catches, fish species, and conditions.")
+						.description("Fishing spot tracker: accounts, locations, catches, and fish species.")
 						.version("1.0.0"))
 				.components(new Components()
 						.addSecuritySchemes("bearerAuth", new SecurityScheme()
