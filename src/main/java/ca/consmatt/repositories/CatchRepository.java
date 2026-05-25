@@ -62,6 +62,14 @@ public interface CatchRepository extends JpaRepository<Catch, Long> {
 			@Param("friendsVis") PostVisibility friendsVis,
 			Pageable pageable);
 
+	/** Distinct non-empty {@code species} values across all catches (landing stats). */
+	@Query("""
+			select count(distinct lower(trim(c.species)))
+			from Catch c
+			where c.species is not null and trim(c.species) <> ''
+			""")
+	long countDistinctSpecies();
+
 	/** Removes all catches for the given location (used before deleting the location). */
 	void deleteByLocation_Id(Long locationId);
 
