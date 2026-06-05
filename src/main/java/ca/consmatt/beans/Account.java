@@ -2,6 +2,8 @@ package ca.consmatt.beans;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
+import java.time.Instant;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -56,5 +58,19 @@ public class Account {
 	 */
 	@Column(name = "profile_image_key", length = 512)
 	private String profileImageKey;
+
+	/** Lowercase email for password sign-ups; nullable for legacy and Google-only rows. */
+	@Column(nullable = true, unique = true, length = 255)
+	private String email;
+
+	/** Legacy and Google accounts default to verified; password sign-ups start false until confirmed. */
+	@Column(name = "email_verified", nullable = false, columnDefinition = "boolean default true")
+	private boolean emailVerified = true;
+
+	@Column(name = "email_verification_token", nullable = true, length = 64)
+	private String emailVerificationToken;
+
+	@Column(name = "email_verification_expires_at", nullable = true)
+	private Instant emailVerificationExpiresAt;
 
 }

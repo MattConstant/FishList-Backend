@@ -22,6 +22,12 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
 
 	boolean existsByUsername(String username);
 
+	boolean existsByEmail(String email);
+
+	Optional<Account> findByEmail(String email);
+
+	Optional<Account> findByEmailVerificationToken(String token);
+
 	List<Account> findTop20ByUsernameContainingIgnoreCaseOrderByUsernameAsc(String username);
 
 	List<Account> findTop200ByUsernameContainingIgnoreCaseOrderByUsernameAsc(String username);

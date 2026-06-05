@@ -4,14 +4,7 @@ import java.time.Instant;
 import java.util.Map;
 
 /**
- * Standard API error payload for frontend-friendly handling.
- *
- * @param timestamp UTC timestamp when the error was generated
- * @param status HTTP status code
- * @param code stable machine-readable application error code
- * @param message human-readable message
- * @param path request path
- * @param errors optional field-level validation errors
+ * JSON error body for API failures (see {@link ca.consmatt.controllers.GlobalExceptionHandler}).
  */
 public record ApiErrorResponse(
 		Instant timestamp,

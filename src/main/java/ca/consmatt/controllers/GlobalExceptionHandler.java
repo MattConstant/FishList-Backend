@@ -61,12 +61,18 @@ public class GlobalExceptionHandler {
 			HttpServletRequest request) {
 		HttpStatusCode statusCode = ex.getStatusCode();
 		HttpStatus status = HttpStatus.valueOf(statusCode.value());
-		return build(
-				status,
-				mapCode(status),
-				ex.getReason() != null ? ex.getReason() : status.getReasonPhrase(),
-				request.getRequestURI(),
-				null);
+		String reason = ex.getReason() != null ? ex.getReason() : status.getReasonPhrase();
+		String code = mapCode(status);
+		String message = reason;
+		int colon = reason.indexOf(':');
+		if (colon > 0) {
+			String prefix = reason.substring(0, colon).trim();
+			if (prefix.matches("[A-Z][A-Z0-9_]*")) {
+				code = prefix;
+				message = reason.substring(colon + 1).trim();
+			}
+		}
+		return build(status, code, message, request.getRequestURI(), null);
 	}
 
 	@ExceptionHandler(DataIntegrityViolationException.class)

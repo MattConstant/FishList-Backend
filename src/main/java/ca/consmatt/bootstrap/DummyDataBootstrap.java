@@ -59,9 +59,12 @@ public class DummyDataBootstrap implements CommandLineRunner {
 		log.info("Seeding dev-only accounts (Google + password login: password \"fishlist-dev-2026!\").");
 
 		String devPw = passwordEncoder.encode("fishlist-dev-2026!");
-		Account user = accountRepository.save(new Account(null, "user", "dev-google-sub-user", devPw, AccountRole.USER, null));
-		Account alice = accountRepository.save(new Account(null, "alice", "dev-google-sub-alice", devPw, AccountRole.USER, null));
-		Account bob = accountRepository.save(new Account(null, "bob", "dev-google-sub-bob", devPw, AccountRole.USER, null));
+		Account user = accountRepository
+				.save(new Account(null, "user", "dev-google-sub-user", devPw, AccountRole.USER, null, null, true, null, null));
+		Account alice = accountRepository
+				.save(new Account(null, "alice", "dev-google-sub-alice", devPw, AccountRole.USER, null, null, true, null, null));
+		Account bob = accountRepository
+				.save(new Account(null, "bob", "dev-google-sub-bob", devPw, AccountRole.USER, null, null, true, null, null));
 
 		fishRepository.save(Fish.builder()
 				.species("Brook trout")

@@ -1,8 +1,11 @@
 package ca.consmatt.controllers;
 
+import java.util.Map;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.mail.MailException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -18,6 +21,10 @@ import ca.consmatt.dto.GoogleAuthRequest;
 import ca.consmatt.dto.GoogleAuthResponse;
 import ca.consmatt.dto.PasswordLoginRequest;
 import ca.consmatt.dto.RegisterRequest;
+import ca.consmatt.dto.RegisterResponse;
+import ca.consmatt.dto.ResendVerificationRequest;
+import ca.consmatt.dto.VerifyEmailRequest;
+import ca.consmatt.mail.EmailVerificationService;
 import ca.consmatt.policy.UsernamePolicy;
 import ca.consmatt.repositories.AccountRepository;
 import ca.consmatt.security.AdminProperties;
@@ -44,6 +51,7 @@ public class AuthController {
 	private final FishListJwtService fishListJwtService;
 	private final UsernamePolicy usernamePolicy;
 	private final PasswordEncoder passwordEncoder;
+	private final EmailVerificationService emailVerificationService;
 
 	/**
 	 * Username + password login. {@link Account#getPassword()} must hold a BCrypt hash (see dev seed data).
@@ -70,6 +78,11 @@ public class AuthController {
 			log.warn("LOGIN_FAILED  user={} reason=bad_password", u);
 			throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid username or password");
 		}
+		if (!account.isEmailVerified()) {
+			log.warn("LOGIN_FAILED  user={} reason=email_not_verified", u);
+			throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+					"EMAIL_NOT_VERIFIED:Confirm your email before signing in. Check your inbox or request a new link.");
+		}
 		String accessToken = fishListJwtService.createAccessToken(account.getUsername());
 		log.info("LOGIN_SUCCESS user={} method=password role={}", account.getUsername(), account.getRole());
 		return ResponseEntity.ok(new GoogleAuthResponse(accessToken, "Bearer",
@@ -78,9 +91,10 @@ public class AuthController {
 
 	/**
 	 * Create a password-backed account (no Google link). Username rules match profile updates.
+	 * Sends a confirmation email; no JWT until the address is verified.
 	 */
 	@PostMapping("/register")
-	public ResponseEntity<GoogleAuthResponse> register(@Valid @RequestBody RegisterRequest request) {
+	public ResponseEntity<RegisterResponse> register(@Valid @RequestBody RegisterRequest request) {
 		String u = request.username().trim();
 		if (u.length() < 2 || u.length() > 100) {
 			log.warn("REGISTER_FAILED user={} reason=length", u);
@@ -97,17 +111,53 @@ public class AuthController {
 			log.warn("REGISTER_FAILED user={} reason=already_taken", u);
 			throw new ResponseStatusException(HttpStatus.CONFLICT, "That username is already taken");
 		}
+		String email = emailVerificationService.normalizeEmail(request.email());
+		if (email.isEmpty()) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A valid email is required");
+		}
+		if (accountRepository.existsByEmail(email)) {
+			log.warn("REGISTER_FAILED user={} reason=email_taken email={}", u, email);
+			throw new ResponseStatusException(HttpStatus.CONFLICT, "That email is already registered");
+		}
 		String hash = passwordEncoder.encode(request.password());
 		try {
-			Account saved = accountRepository.save(new Account(null, u, null, hash, AccountRole.USER, null));
-			String accessToken = fishListJwtService.createAccessToken(saved.getUsername());
-			log.info("REGISTERED    user={} id={} role={}", saved.getUsername(), saved.getId(), saved.getRole());
-			return ResponseEntity.ok(new GoogleAuthResponse(accessToken, "Bearer",
-					new AccountResponse(saved.getId(), saved.getUsername(), saved.getProfileImageKey())));
+			Account saved = new Account(null, u, null, hash, AccountRole.USER, null, email, false, null, null);
+			emailVerificationService.issueVerificationToken(saved);
+			accountRepository.save(saved);
+			try {
+				emailVerificationService.sendVerificationEmail(saved);
+			} catch (MailException e) {
+				log.error("REGISTER_EMAIL_FAILED user={} email={}", saved.getUsername(), email, e);
+			}
+			log.info("REGISTERED    user={} id={} email={} pending_verification=true", saved.getUsername(),
+					saved.getId(), email);
+			return ResponseEntity.status(HttpStatus.CREATED).body(new RegisterResponse(
+					"Check your email to confirm your account before signing in.",
+					email,
+					true));
 		} catch (DataIntegrityViolationException e) {
 			log.warn("REGISTER_FAILED user={} reason=race_already_taken", u);
 			throw new ResponseStatusException(HttpStatus.CONFLICT, "That username is already taken");
 		}
+	}
+
+	@PostMapping("/verify-email")
+	public ResponseEntity<Map<String, String>> verifyEmail(@Valid @RequestBody VerifyEmailRequest request) {
+		boolean ok = emailVerificationService.verifyToken(request.token());
+		if (!ok) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+					"This confirmation link is invalid or has expired.");
+		}
+		return ResponseEntity.ok(Map.of("message", "Email confirmed. You can sign in now."));
+	}
+
+	@PostMapping("/resend-verification")
+	public ResponseEntity<Map<String, String>> resendVerification(
+			@Valid @RequestBody ResendVerificationRequest request) {
+		emailVerificationService.resendForEmail(request.email());
+		return ResponseEntity.ok(Map.of(
+				"message",
+				"If an unverified account exists for that email, we sent a new confirmation link."));
 	}
 
 	@PostMapping("/google")
@@ -141,8 +191,10 @@ public class AuthController {
 	private Account createAccountFromGoogle(GoogleIdTokenPayload payload) {
 		String username = deriveUniqueUsername(payload.email(), payload.sub());
 		AccountRole role = adminProperties.isAdminUsername(username) ? AccountRole.ADMIN : AccountRole.USER;
+		String email = emailVerificationService.normalizeEmail(payload.email());
 		try {
-			return accountRepository.save(new Account(null, username, payload.sub(), null, role, null));
+			return accountRepository.save(new Account(null, username, payload.sub(), null, role, null, email, true,
+					null, null));
 		} catch (DataIntegrityViolationException e) {
 			return accountRepository.findByGoogleSub(payload.sub())
 					.orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "Could not create account"));

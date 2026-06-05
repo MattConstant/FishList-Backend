@@ -70,6 +70,16 @@ services:
       RATE_LIMIT_INTERACTIONS_PER_MINUTE: ${RATE_LIMIT_INTERACTIONS_PER_MINUTE:-120}
       # Align with application.properties (25MB default); override with MULTIPART_MAX_SIZE for huge RAW/heic.
       MULTIPART_MAX_SIZE: ${MULTIPART_MAX_SIZE:-25MB}
+      # Email verification (see .env.example — Gmail SMTP or other provider)
+      APP_MAIL_ENABLED: ${APP_MAIL_ENABLED:-false}
+      APP_MAIL_FROM: ${APP_MAIL_FROM:-}
+      APP_FRONTEND_BASE_URL: ${APP_FRONTEND_BASE_URL:-http://localhost:3000}
+      SPRING_MAIL_HOST: ${SPRING_MAIL_HOST:-}
+      SPRING_MAIL_PORT: ${SPRING_MAIL_PORT:-587}
+      SPRING_MAIL_USERNAME: ${SPRING_MAIL_USERNAME:-}
+      SPRING_MAIL_PASSWORD: ${SPRING_MAIL_PASSWORD:-}
+      SPRING_MAIL_SMTP_AUTH: ${SPRING_MAIL_SMTP_AUTH:-true}
+      SPRING_MAIL_SMTP_STARTTLS: ${SPRING_MAIL_SMTP_STARTTLS:-true}
     depends_on:
       minio-init:
         condition: service_completed_successfully
