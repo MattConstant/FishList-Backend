@@ -38,6 +38,8 @@ import ca.consmatt.dto.AddCatchRequest;
 import ca.consmatt.dto.AddCatchResponse;
 import ca.consmatt.dto.FishEntryRequest;
 import ca.consmatt.dto.CreateLocationRequest;
+import ca.consmatt.dto.UpdateCatchRequest;
+import ca.consmatt.dto.UpdateCatchResponse;
 import ca.consmatt.dto.CatchCommentResponse;
 import ca.consmatt.dto.CatchCommentsPageResponse;
 import ca.consmatt.dto.CatchLikeResponse;
@@ -192,6 +194,62 @@ public class LocationController {
 		List<FishEntryRequest> lines = resolveFishLines(request);
 		List<String> imageUrls = normalizeImageUrls(request.imageUrls(), request.imageUrl());
 
+		Catch catchEntity = Catch.builder().location(location).build();
+		applyFishLinesToCatch(catchEntity, lines, request.quantity(), request.description(), request.fishingType());
+		catchEntity.setImageUrl(imageUrls.isEmpty() ? null : imageUrls.get(0));
+		catchEntity.setImageUrlsRaw(String.join("\n", imageUrls));
+		Catch saved = catchRepo.save(catchEntity);
+		log.info("CATCH_ADDED      user={} location={} id={} species=\"{}\" qty={} photos={}", account.getUsername(),
+				location.getId(), saved.getId(), saved.getSpecies(), saved.getQuantity(), imageUrls.size());
+		List<UnlockedAchievementSummary> unlocked = achievementService.evaluateAll(account);
+		return ResponseEntity.status(HttpStatus.CREATED).body(new AddCatchResponse(saved, unlocked));
+	}
+
+	/**
+	 * Updates catch text fields and the parent location name/visibility (owner only). Photos are not changed.
+	 */
+	@PutMapping("/{id}/catches/{catchId}")
+	public ResponseEntity<UpdateCatchResponse> updateCatch(@PathVariable Long id, @PathVariable Long catchId,
+			@Valid @RequestBody UpdateCatchRequest request, Authentication authentication) {
+		Account account = requireAccount(authentication);
+		Location location = locationRepo.findById(id)
+				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Location not found"));
+		assertLocationOwner(location, account);
+		Catch catchEntity = catchRepo.findByIdAndLocation_Id(catchId, id)
+				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Catch not found"));
+
+		List<FishEntryRequest> lines = request.fish();
+		applyFishLinesToCatch(catchEntity, lines, null, request.description(), request.fishingType());
+
+		location.setLocationName(request.locationName().trim());
+		location.setVisibility(request.visibility());
+		locationRepo.save(location);
+		Catch saved = catchRepo.save(catchEntity);
+		log.info("CATCH_UPDATED    user={} location={} catchId={} visibility={}", account.getUsername(), id, catchId,
+				request.visibility());
+		return ResponseEntity.ok(new UpdateCatchResponse(location.getId(), location.getLocationName(),
+				location.getVisibility(), saved));
+	}
+
+	private List<FishEntryRequest> resolveFishLines(AddCatchRequest request) {
+		if (request.fish() != null && !request.fish().isEmpty()) {
+			return request.fish();
+		}
+		if (request.species() == null || request.species().isBlank()) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "species or fish list is required");
+		}
+		return List.of(new FishEntryRequest(
+				request.species().trim(),
+				request.lengthCm(),
+				request.weightKg(),
+				request.notes()));
+	}
+
+	private void applyFishLinesToCatch(Catch catchEntity, List<FishEntryRequest> lines, Integer quantityOverride,
+			String description, ca.consmatt.beans.FishingType fishingType) {
+		if (lines == null || lines.isEmpty()) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "At least one fish entry is required");
+		}
 		String speciesOut;
 		int quantityOut;
 		Double lengthOut;
@@ -202,7 +260,7 @@ public class LocationController {
 		if (lines.size() == 1) {
 			FishEntryRequest a = lines.get(0);
 			speciesOut = a.species().trim();
-			quantityOut = request.quantity() != null ? request.quantity() : 1;
+			quantityOut = quantityOverride != null ? quantityOverride : 1;
 			lengthOut = a.lengthCm();
 			weightOut = a.weightKg();
 			notesOut = a.notes();
@@ -219,38 +277,14 @@ public class LocationController {
 			}
 		}
 
-		Catch catchEntity = Catch.builder()
-				.location(location)
-				.species(speciesOut)
-				.quantity(quantityOut)
-				.lengthCm(lengthOut)
-				.weightKg(weightOut)
-				.notes(notesOut)
-				.fishDetailsJson(fishDetailsJsonOut)
-				.imageUrl(imageUrls.isEmpty() ? null : imageUrls.get(0))
-				.imageUrlsRaw(String.join("\n", imageUrls))
-				.description(request.description())
-				.fishingType(request.fishingType())
-				.build();
-		Catch saved = catchRepo.save(catchEntity);
-		log.info("CATCH_ADDED      user={} location={} id={} species=\"{}\" qty={} photos={}", account.getUsername(),
-				location.getId(), saved.getId(), speciesOut, quantityOut, imageUrls.size());
-		List<UnlockedAchievementSummary> unlocked = achievementService.evaluateAll(account);
-		return ResponseEntity.status(HttpStatus.CREATED).body(new AddCatchResponse(saved, unlocked));
-	}
-
-	private List<FishEntryRequest> resolveFishLines(AddCatchRequest request) {
-		if (request.fish() != null && !request.fish().isEmpty()) {
-			return request.fish();
-		}
-		if (request.species() == null || request.species().isBlank()) {
-			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "species or fish list is required");
-		}
-		return List.of(new FishEntryRequest(
-				request.species().trim(),
-				request.lengthCm(),
-				request.weightKg(),
-				request.notes()));
+		catchEntity.setSpecies(speciesOut);
+		catchEntity.setQuantity(quantityOut);
+		catchEntity.setLengthCm(lengthOut);
+		catchEntity.setWeightKg(weightOut);
+		catchEntity.setNotes(notesOut);
+		catchEntity.setFishDetailsJson(fishDetailsJsonOut);
+		catchEntity.setDescription(description);
+		catchEntity.setFishingType(fishingType);
 	}
 
 	/**
