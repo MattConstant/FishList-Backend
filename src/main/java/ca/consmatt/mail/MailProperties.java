@@ -20,6 +20,8 @@ public class MailProperties {
 
 	private long verificationTtlHours = 24;
 
+	private long passwordResetTtlHours = 1;
+
 	public boolean isEnabled() {
 		return enabled;
 	}
@@ -50,5 +52,13 @@ public class MailProperties {
 
 	public void setVerificationTtlHours(long verificationTtlHours) {
 		this.verificationTtlHours = verificationTtlHours;
+	}
+
+	public long getPasswordResetTtlHours() {
+		return passwordResetTtlHours;
+	}
+
+	public void setPasswordResetTtlHours(long passwordResetTtlHours) {
+		this.passwordResetTtlHours = passwordResetTtlHours;
 	}
 }

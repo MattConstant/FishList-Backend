@@ -73,4 +73,10 @@ public class Account {
 	@Column(name = "email_verification_expires_at", nullable = true)
 	private Instant emailVerificationExpiresAt;
 
+	@Column(name = "password_reset_token", nullable = true, length = 64)
+	private String passwordResetToken;
+
+	@Column(name = "password_reset_expires_at", nullable = true)
+	private Instant passwordResetExpiresAt;
+
 }

@@ -51,6 +51,10 @@ public class AccountEmailVerificationSchemaMigration implements CommandLineRunne
 			}
 			jdbcTemplate.execute(
 					"CREATE UNIQUE INDEX IF NOT EXISTS uk_account_email ON account (email) WHERE email IS NOT NULL");
+			jdbcTemplate.execute(
+					"ALTER TABLE account ADD COLUMN IF NOT EXISTS password_reset_token VARCHAR(64)");
+			jdbcTemplate.execute(
+					"ALTER TABLE account ADD COLUMN IF NOT EXISTS password_reset_expires_at TIMESTAMPTZ");
 			if (backfilled > 0) {
 				log.info("Backfilled email_verified=true for {} legacy account row(s)", backfilled);
 			}

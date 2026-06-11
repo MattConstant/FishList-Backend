@@ -61,7 +61,8 @@ public class SecurityConfig {
 						.requestMatchers("/api/health", "/api/healthz").permitAll()
 						.requestMatchers("/api/locations/heartbeat", "/api/locations/healthcheck").permitAll()
 						.requestMatchers(HttpMethod.POST, "/api/auth/google", "/api/auth/login", "/api/auth/register",
-								"/api/auth/verify-email", "/api/auth/resend-verification")
+								"/api/auth/verify-email", "/api/auth/resend-verification",
+								"/api/auth/forgot-password", "/api/auth/reset-password")
 						.permitAll()
 						.requestMatchers(HttpMethod.GET, "/api/public/stats").permitAll()
 						.requestMatchers("/h2-console/**").permitAll()

@@ -42,6 +42,7 @@ import ca.consmatt.dto.UpdateProfileRequest;
 import ca.consmatt.dto.UnlockedAchievementSummary;
 import ca.consmatt.repositories.CatchCommentRepository;
 import ca.consmatt.repositories.AccountRepository;
+import ca.consmatt.mail.PasswordResetService;
 import ca.consmatt.policy.UsernamePolicy;
 import ca.consmatt.repositories.FriendshipRepository;
 import ca.consmatt.repositories.LocationRepository;
@@ -73,6 +74,7 @@ public class AccountController {
 	private final FishListJwtService fishListJwtService;
 	private final UsernamePolicy usernamePolicy;
 	private final AchievementService achievementService;
+	private final PasswordResetService passwordResetService;
 
 	/**
 	 * Returns the authenticated user's public profile.
@@ -105,7 +107,7 @@ public class AccountController {
 	@GetMapping("/me")
 	public ResponseEntity<AccountResponse> getCurrentAccount(Authentication authentication) {
 		return accountRepository.findByUsername(authentication.getName())
-				.map(a -> ResponseEntity.ok(toResponse(a)))
+				.map(a -> ResponseEntity.ok(toMeResponse(a)))
 				.orElse(ResponseEntity.notFound().build());
 	}
 
@@ -167,7 +169,7 @@ public class AccountController {
 		accountRepository.save(account);
 		log.info("PROFILE_UPDATE user={} changes={}", account.getUsername(), changes);
 		String accessToken = fishListJwtService.createAccessToken(account.getUsername());
-		return ResponseEntity.ok(new AccountUpdateResponse(toResponse(account), accessToken, "Bearer"));
+		return ResponseEntity.ok(new AccountUpdateResponse(toMeResponse(account), accessToken, "Bearer"));
 	}
 
 	/**
@@ -367,6 +369,16 @@ public class AccountController {
 
 	private static AccountResponse toResponse(Account a) {
 		return new AccountResponse(a.getId(), a.getUsername(), a.getProfileImageKey());
+	}
+
+	private AccountResponse toMeResponse(Account a) {
+		boolean hasEmail = passwordResetService.hasRegisteredEmail(a);
+		return new AccountResponse(
+				a.getId(),
+				a.getUsername(),
+				a.getProfileImageKey(),
+				hasEmail,
+				hasEmail ? passwordResetService.maskEmail(a.getEmail()) : null);
 	}
 
 	private static String normalizeUploadKey(String objectKey) {

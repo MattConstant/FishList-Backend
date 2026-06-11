@@ -28,6 +28,8 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
 
 	Optional<Account> findByEmailVerificationToken(String token);
 
+	Optional<Account> findByPasswordResetToken(String token);
+
 	List<Account> findTop20ByUsernameContainingIgnoreCaseOrderByUsernameAsc(String username);
 
 	List<Account> findTop200ByUsernameContainingIgnoreCaseOrderByUsernameAsc(String username);
