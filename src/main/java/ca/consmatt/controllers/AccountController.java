@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.transaction.annotation.Transactional;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -29,6 +30,7 @@ import java.util.stream.Collectors;
 
 import ca.consmatt.beans.Account;
 import ca.consmatt.beans.CatchComment;
+import ca.consmatt.beans.ForumThreadComment;
 import ca.consmatt.beans.Friendship;
 import ca.consmatt.beans.Location;
 import ca.consmatt.beans.PostVisibility;
@@ -36,11 +38,13 @@ import ca.consmatt.dto.AccountResponse;
 import ca.consmatt.dto.AccountUpdateResponse;
 import ca.consmatt.dto.AddFriendResponse;
 import ca.consmatt.dto.CommentReplyNotificationResponse;
+import ca.consmatt.dto.ThreadCommentReplyNotificationResponse;
 import ca.consmatt.dto.CreateMapFavoriteSpotRequest;
 import ca.consmatt.dto.MapFavoriteSpotResponse;
 import ca.consmatt.dto.UpdateProfileRequest;
 import ca.consmatt.dto.UnlockedAchievementSummary;
 import ca.consmatt.repositories.CatchCommentRepository;
+import ca.consmatt.repositories.ForumThreadCommentRepository;
 import ca.consmatt.repositories.AccountRepository;
 import ca.consmatt.mail.PasswordResetService;
 import ca.consmatt.policy.UsernamePolicy;
@@ -68,6 +72,7 @@ public class AccountController {
 
 	private final AccountRepository accountRepository;
 	private final CatchCommentRepository catchCommentRepository;
+	private final ForumThreadCommentRepository forumThreadCommentRepository;
 	private final LocationRepository locationRepository;
 	private final FriendshipRepository friendshipRepository;
 	private final MapFavoriteSpotService mapFavoriteSpotService;
@@ -102,6 +107,33 @@ public class AccountController {
 		long locId = c.getCatchRecord().getLocation().getId();
 		long catchId = c.getCatchRecord().getId();
 		return new CommentReplyNotificationResponse(c.getId(), locId, catchId, username, preview, c.getCreatedAt());
+	}
+
+	/**
+	 * Recent replies to comments you wrote on forum threads.
+	 */
+	@GetMapping("/me/thread-comment-replies")
+	@Transactional(readOnly = true)
+	public List<ThreadCommentReplyNotificationResponse> listThreadCommentReplyNotifications(
+			@RequestParam(name = "limit", defaultValue = "25") @Min(1) @Max(50) int limit,
+			Authentication authentication) {
+		Account me = requireAccount(authentication);
+		Page<ForumThreadComment> page = forumThreadCommentRepository
+				.findByParent_Account_IdAndAccount_IdNotOrderByIdDesc(
+						me.getId(), me.getId(), PageRequest.of(0, limit));
+		return page.getContent().stream().map(this::toThreadReplyNotification).toList();
+	}
+
+	private ThreadCommentReplyNotificationResponse toThreadReplyNotification(ForumThreadComment c) {
+		String msg = c.getMessage() == null ? "" : c.getMessage();
+		String preview = msg.length() > 140 ? msg.substring(0, 137) + "..." : msg;
+		String username = c.getAccount() != null ? c.getAccount().getUsername() : "unknown";
+		long threadId = c.getThread() != null ? c.getThread().getId() : 0L;
+		String threadTitle = c.getThread() != null && c.getThread().getTitle() != null
+				? c.getThread().getTitle()
+				: "Discussion";
+		return new ThreadCommentReplyNotificationResponse(
+				c.getId(), threadId, threadTitle, username, preview, c.getCreatedAt());
 	}
 
 	@GetMapping("/me")

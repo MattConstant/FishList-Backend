@@ -34,7 +34,11 @@ import ca.consmatt.repositories.CatchCommentRepository;
 import ca.consmatt.repositories.CatchLikeRepository;
 import ca.consmatt.repositories.CatchRepository;
 import ca.consmatt.repositories.FriendshipRepository;
+import ca.consmatt.repositories.ForumThreadCommentRepository;
+import ca.consmatt.repositories.ForumThreadLikeRepository;
+import ca.consmatt.repositories.ForumThreadRepository;
 import ca.consmatt.repositories.LocationRepository;
+import ca.consmatt.beans.ForumThread;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
@@ -63,6 +67,9 @@ public class AdminController {
 	private final CatchLikeRepository catchLikeRepository;
 	private final FriendshipRepository friendshipRepository;
 	private final AccountAchievementRepository accountAchievementRepository;
+	private final ForumThreadRepository forumThreadRepository;
+	private final ForumThreadCommentRepository forumThreadCommentRepository;
+	private final ForumThreadLikeRepository forumThreadLikeRepository;
 
 	@GetMapping("/me")
 	public AdminMeResponse me(Authentication authentication) {
@@ -137,6 +144,13 @@ public class AdminController {
 
 		catchCommentRepository.deleteByAccount_Id(target.getId());
 		catchLikeRepository.deleteByAccount_Id(target.getId());
+		forumThreadCommentRepository.deleteByAccount_Id(target.getId());
+		forumThreadLikeRepository.deleteByAccount_Id(target.getId());
+		for (ForumThread thread : forumThreadRepository.findByAccount_Id(target.getId())) {
+			forumThreadLikeRepository.deleteByThread_Id(thread.getId());
+			forumThreadCommentRepository.deleteByThread_Id(thread.getId());
+			forumThreadRepository.delete(thread);
+		}
 		accountAchievementRepository.deleteByAccount_Id(target.getId());
 		friendshipRepository.deleteByAccountA_IdOrAccountB_Id(target.getId(), target.getId());
 		accountRepository.deleteById(target.getId());
