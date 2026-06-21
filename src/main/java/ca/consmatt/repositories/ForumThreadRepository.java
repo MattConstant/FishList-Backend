@@ -1,7 +1,6 @@
 package ca.consmatt.repositories;
 
 import java.util.List;
-import java.util.Optional;
 
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -44,8 +43,6 @@ public interface ForumThreadRepository extends JpaRepository<ForumThread, Long> 
 			@Param("publicVis") PostVisibility publicVis,
 			@Param("friendsVis") PostVisibility friendsVis,
 			Pageable pageable);
-
-	Optional<ForumThread> findByIdAndAccount_Id(Long id, Long accountId);
 
 	java.util.List<ForumThread> findByAccount_Id(Long accountId);
 }

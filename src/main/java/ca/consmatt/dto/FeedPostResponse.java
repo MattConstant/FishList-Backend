@@ -25,5 +25,7 @@ public record FeedPostResponse(
 		String imageUrls,
 		String fishDetailsJson,
 		FishingType fishingType,
-		PostVisibility visibility) {
+		PostVisibility visibility,
+		Long likesCount,
+		Long commentsCount) {
 }

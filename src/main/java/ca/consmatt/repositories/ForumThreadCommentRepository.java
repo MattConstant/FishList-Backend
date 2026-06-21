@@ -6,8 +6,6 @@ import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
 
 import ca.consmatt.beans.ForumThreadComment;
 
@@ -28,12 +26,6 @@ public interface ForumThreadCommentRepository extends JpaRepository<ForumThreadC
 
 	void deleteByAccount_Id(Long accountId);
 
-	/** Top-level comments on threads owned by the given account (for "new comment on your discussion" notifications). */
-	Page<ForumThreadComment> findByThread_Account_IdAndParentIsNullAndAccount_IdNotOrderByIdDesc(
-			Long threadOwnerId,
-			Long excludeAccountId,
-			Pageable pageable);
-
 	/** Replies to comments written by the given account. */
 	Page<ForumThreadComment> findByParent_Account_IdAndAccount_IdNotOrderByIdDesc(
 			Long parentAuthorId,
@@ -41,7 +33,4 @@ public interface ForumThreadCommentRepository extends JpaRepository<ForumThreadC
 			Pageable pageable);
 
 	long countByThread_Id(Long threadId);
-
-	@Query("select count(c) from ForumThreadComment c where c.thread.account.id = :accountId")
-	long countOnThreadsOwnedByAccountId(@Param("accountId") Long accountId);
 }

@@ -9,7 +9,6 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import ca.consmatt.beans.Catch;
-import ca.consmatt.beans.FishingType;
 import ca.consmatt.beans.PostVisibility;
 import ca.consmatt.beans.WaterType;
 import ca.consmatt.dto.FeedPostResponse;
@@ -43,7 +42,9 @@ public interface CatchRepository extends JpaRepository<Catch, Long> {
 				c.imageUrlsRaw,
 				c.fishDetailsJson,
 				c.fishingType,
-				l.visibility
+				l.visibility,
+				(select count(cl) from CatchLike cl where cl.catchRecord.id = c.id),
+				(select count(cc) from CatchComment cc where cc.catchRecord.id = c.id)
 			)
 			from Catch c
 			join c.location l
@@ -152,16 +153,4 @@ public interface CatchRepository extends JpaRepository<Catch, Long> {
 				and l.waterType is not null
 			""")
 	List<WaterType> findDistinctWaterTypesByAccountId(@Param("accountId") Long accountId);
-
-	/** Convenience: pull the full list of fishing types the account has used (absent = unspecified). */
-	default java.util.Set<FishingType> findDistinctFishingTypes(Long accountId) {
-		java.util.Set<FishingType> set = new java.util.HashSet<>();
-		for (Object[] row : countCatchesByFishingType(accountId)) {
-			Object first = row != null && row.length > 0 ? row[0] : null;
-			if (first instanceof FishingType ft) {
-				set.add(ft);
-			}
-		}
-		return set;
-	}
 }

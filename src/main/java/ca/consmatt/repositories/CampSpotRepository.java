@@ -15,8 +15,6 @@ import ca.consmatt.beans.PostVisibility;
  */
 public interface CampSpotRepository extends JpaRepository<CampSpot, Long> {
 
-	List<CampSpot> findByAccount_Id(Long accountId);
-
 	@Query("""
 			select c
 			from CampSpot c
